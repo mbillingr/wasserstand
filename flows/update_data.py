@@ -1,4 +1,5 @@
 import pandas as pd
+import prefect
 from prefect import Flow, task
 
 URL = "https://wiski.tirol.gv.at/hydro/ogd/OGD_W.csv"
@@ -25,13 +26,19 @@ def split_days(df):
 
 @task
 def update_daydata(date, new_df):
+    logger = prefect.context.get("logger")
+
     new_df = new_df.reset_index(drop=True)
 
     try:
         df = load_day(date)
+        n_old = len(df)
         df = pd.concat([df, new_df]).drop_duplicates()
+        logger.info(f"Added {len(df) - n_old} rows to {date} data")
     except FileNotFoundError:
         df = new_df
+        logger.info(f"Initialized {date} data with {len(df)} rows")
+
     df = df.sort_values(['Stationsnummer', 'timestamp_utc'])
     store_day(date, df)
 
