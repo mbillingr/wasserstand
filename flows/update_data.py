@@ -2,9 +2,11 @@ import pandas as pd
 import prefect
 from prefect import Flow, task
 
+import config
+
 URL = "https://wiski.tirol.gv.at/hydro/ogd/OGD_W.csv"
 
-DATAFILE_TEMPLATE = "../data/wasser_%Y-%m-%d.parquet"
+DATAFILE_TEMPLATE = config.DATA_ROOT + "wasser_%Y-%m-%d.parquet"
 
 
 @task
@@ -49,7 +51,6 @@ def load_day(date):
 
 def store_day(date, df):
     df.to_parquet(date.strftime(DATAFILE_TEMPLATE), index=False)
-    df.to_csv(date.strftime(DATAFILE_TEMPLATE) + '.csv', index=False)
 
 
 with Flow("fetch-water-data") as flow:
