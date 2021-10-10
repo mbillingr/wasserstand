@@ -1,4 +1,9 @@
+dask
 fastparquet
+matplotlib
 pandas
 prefect
 s3fs
+
+# dev
+black
