@@ -1,6 +1,7 @@
 dask
 fastparquet
 matplotlib
+mlflow
 pandas
 prefect
 s3fs
