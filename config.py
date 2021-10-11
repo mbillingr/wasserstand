@@ -6,6 +6,8 @@ DATA_ROOT = "s3://kazemakase-data"
 
 DATAFILE_TAG = "wasser"
 
+DATAFILE_RAW_TEMPLATE = f"{DATA_ROOT}/raw/%Y-%m-%d-%H:%M.parquet"
+
 DATAFILE_TEMPLATE = f"{DATA_ROOT}/{DATAFILE_TAG}_%Y-%m-%d.parquet"
 DATAFILE_ALL = f"{DATA_ROOT}/{DATAFILE_TAG}_*"
 DATAFILE_LATEST = f"{DATA_ROOT}/latest_{DATAFILE_TAG}.parquet"

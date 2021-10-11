@@ -2,11 +2,13 @@ import pandas as pd
 import prefect
 from prefect import Flow, task
 import numpy as np
+import datetime
 
 from config import (
     DATA_SOURCE_URL,
     DATAFILE_TEMPLATE,
     DATAFILE_LATEST,
+    DATAFILE_RAW_TEMPLATE,
     SAMPLE_INTERVAL_MINUTES,
     RESAMPLE_TO_MINUTES,
 )
@@ -111,7 +113,7 @@ def update_daydata(date, new_df):
     try:
         df = load_data(date.strftime(DATAFILE_TEMPLATE))
         n_old = len(df)
-        df = pd.concat([df, new_df]).drop_duplicates()
+        df = pd.concat([df, new_df]).drop_duplicates(keep='last', ignore_index=True)
         logger.info(f"Added {len(df) - n_old} rows to {date} data")
     except FileNotFoundError:
         df = new_df
@@ -126,6 +128,12 @@ def store_latest_data(df):
     store_data(DATAFILE_LATEST, df)
 
 
+@task
+def store_raw_data(df):
+    url = datetime.datetime.now().strftime(DATAFILE_RAW_TEMPLATE)
+    store_data(url, df)
+
+
 def store_data(url, df):
     df.to_parquet(url, index=False)
 
@@ -136,6 +144,7 @@ def load_data(url):
 
 with Flow("fetch-water-data") as flow:
     level_data = fetch_latest_level_data(DATA_SOURCE_URL)
+    store_raw_data(level_data)
     level_data = remove_bad_rows(level_data)
     level_data = convert_timestamp(level_data)
     level_data = downsample(level_data)
