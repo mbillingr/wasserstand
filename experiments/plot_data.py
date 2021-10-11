@@ -1,9 +1,9 @@
 import dask.dataframe
 import matplotlib.pyplot as plt
 
-import config
+from config import DATAFILE_ALL
 
-water_data = dask.dataframe.read_parquet(config.DATA_ROOT + "*")
+water_data = dask.dataframe.read_parquet(DATAFILE_ALL)
 
 
 def plot_station(name):

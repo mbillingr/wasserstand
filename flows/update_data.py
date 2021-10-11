@@ -2,19 +2,27 @@ import pandas as pd
 import prefect
 from prefect import Flow, task
 
-import config
+from config import DATA_SOURCE_URL, DATAFILE_TEMPLATE, DATAFILE_LATEST
 
-URL = "https://wiski.tirol.gv.at/hydro/ogd/OGD_W.csv"
-
-DATAFILE_TEMPLATE = config.DATA_ROOT + "wasser_%Y-%m-%d.parquet"
+SOURCE_TIMESTAMP_COLUMN = "Zeitstempel in ISO8601"
 
 
 @task
-def fetch_level_data(url):
-    df = pd.read_csv(url, encoding="ISO-8859-1", sep=';', parse_dates=['Zeitstempel in ISO8601'])
-    df['timestamp_utc'] = df['Zeitstempel in ISO8601'].apply(lambda x: x.tz_convert('UTC')).values.astype('datetime64')
-    df['date'] = df['timestamp_utc'].astype('datetime64[D]')
-    df = df.drop(columns='Zeitstempel in ISO8601')
+def fetch_latest_level_data(url):
+    return pd.read_csv(
+        url, encoding="ISO-8859-1", sep=";", parse_dates=[SOURCE_TIMESTAMP_COLUMN]
+    )
+
+
+@task
+def convert_timestamp(df):
+    df["timestamp_utc"] = (
+        df[SOURCE_TIMESTAMP_COLUMN]
+        .apply(lambda x: x.tz_convert("UTC"))
+        .values.astype("datetime64")
+    )
+    df["date"] = df["timestamp_utc"].astype("datetime64[D]")
+    df = df.drop(columns=SOURCE_TIMESTAMP_COLUMN)
     return df
 
 
@@ -33,7 +41,7 @@ def update_daydata(date, new_df):
     new_df = new_df.reset_index(drop=True)
 
     try:
-        df = load_day(date)
+        df = load_data(date.strftime(DATAFILE_TEMPLATE))
         n_old = len(df)
         df = pd.concat([df, new_df]).drop_duplicates()
         logger.info(f"Added {len(df) - n_old} rows to {date} data")
@@ -41,20 +49,28 @@ def update_daydata(date, new_df):
         df = new_df
         logger.info(f"Initialized {date} data with {len(df)} rows")
 
-    df = df.sort_values(['Stationsnummer', 'timestamp_utc'])
-    store_day(date, df)
+    df = df.sort_values(["Stationsnummer", "timestamp_utc"])
+    store_data(date.strftime(DATAFILE_TEMPLATE), df)
 
 
-def load_day(date):
-    return pd.read_parquet(date.strftime(DATAFILE_TEMPLATE))
+@task
+def store_latest_data(df):
+    store_data(DATAFILE_LATEST, df)
 
 
-def store_day(date, df):
-    df.to_parquet(date.strftime(DATAFILE_TEMPLATE), index=False)
+def store_data(url, df):
+    df.to_parquet(url, index=False)
+
+
+def load_data(url):
+    return pd.read_parquet(url)
 
 
 with Flow("fetch-water-data") as flow:
-    level_data = fetch_level_data(URL)
+    level_data = fetch_latest_level_data(DATA_SOURCE_URL)
+    level_data = convert_timestamp(level_data)
+    store_latest_data(level_data)
+
     dates, levels = split_days(level_data)
     update_daydata.map(dates, levels)
 
