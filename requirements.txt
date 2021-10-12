@@ -5,6 +5,7 @@ mlflow
 pandas
 prefect
 s3fs
+scikit-learn
 
 # dev
 black
