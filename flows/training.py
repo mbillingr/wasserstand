@@ -19,18 +19,13 @@ def load_data(source=DATAFILE_ALL):
 
 
 @task
-def build_time_series(dataframe):
-    stations = {
-        id: name
-        for _, (id, name) in dataframe[["Stationsnummer", "Stationsname"]]
-        .compute()
-        .iterrows()
-    }
+def build_time_series(dataframe, stations=None):
+    stations = stations or dataframe["Stationsname"].unique()
 
     station_series = []
     times = None
     for s in stations:
-        sdf = dataframe[dataframe["Stationsnummer"] == s]
+        sdf = dataframe[dataframe["Stationsname"] == s]
 
         t = sdf["timestamp_utc"].values
         series = sdf["Wert"].values
@@ -48,61 +43,55 @@ def build_time_series(dataframe):
         .compute_chunk_sizes()
     )
 
-    ts_data = xr.DataArray(
+    time_series = xr.DataArray(
         data=ts_data,
         dims=["time", "station"],
-        coords={"time": times, "station": list(stations.values())},
+        coords={"time": times, "station": list(stations)},
     )
 
-    return ts_data
+    return time_series
+
+
+@task(nout=2)
+def split_data(time_series, epoch_size=20):
+    epochs = slice_time_series(epoch_size, time_series)
+    train = epochs[::2]
+    test = epochs[1::2]
+    return train, test
 
 
 @task
-def big_task(time_series):
-    times = time_series.time.data
-    print(times)
-
-    time_series = time_series.sel(station=["Zirl", "Innsbruck"])
-
-    x0 = time_series[0]
-    # time_series = da.diff(time_series, axis=0)
-
-    EPOCH_SIZE = 20
-    N_PREDICT = 10
-    MODEL_ORDER = 10
-
-    epochs = slice_time_series(EPOCH_SIZE, time_series)
-    train = epochs[::2]
-    test = epochs[1::2]
-
-    model = UnivariateLinearPredictor(order=MODEL_ORDER)
+def train_model(train, test, n_predict=10, model_order=10):
+    model = UnivariateLinearPredictor(order=model_order)
     model.fit(train.data)
+    model.estimate_prediction_error(n_predict, test.data)
+    return model
 
-    err = estimate_prediction_error(model, N_PREDICT, test.data)
-    s = da.std(err, axis=0)[:, 1].compute()
 
-    print("============")
-
-    pred = model.predict(N_PREDICT, time_series.data).compute()
-
-    # time_series = x0 + da.cumsum(time_series, axis=0)
-    # pred = time_series[-1] + np.cumsum(pred, axis=0)
-    # s = np.sqrt(np.cumsum(s**2, axis=0))
+@task
+def visualize(model, time_series, n_predict=20):
+    pred = model.predict(n_predict, time_series.data).compute()
 
     pred = da.concatenate([time_series[-1:], pred], axis=0)
+
+    times = time_series.time.data
 
     dt = times[1] - times[0]
     pred_times = np.arange(times[-1], times[-1] + dt * pred.shape[0], dt)
 
-    plt.plot(pred_times, pred[:, 1], "--")
+    n_err = len(model.err_low)
+
+    plt.plot(pred_times, pred[:, 1], "--", label="forecast")
     plt.fill_between(
-        pred_times[1:],
-        pred[1:, 1] + s,
-        pred[1:, 1] - s,
+        pred_times[1 : n_err + 1],
+        pred[1 : n_err + 1, 1] + model.err_low,
+        pred[1 : n_err + 1, 1] + model.err_hi,
         alpha=0.3,
+        label="uncertainty",
     )
-    plt.plot(times, time_series[:, 1])
+    plt.plot(times, time_series[:, 1], label="measured")
     plt.grid()
+    plt.legend()
     plt.show()
 
 
@@ -121,6 +110,12 @@ class TimeSeriesPredictor:
                 [time_series, self.predict_next(time_series)], axis=0
             )
         return time_series[-n:, :]
+
+    def estimate_prediction_error(self, n, test_epochs):
+        err = estimate_prediction_error(self, n, test_epochs)
+        s = da.std(err, axis=0)[:, 1].compute()
+        self.err_low = -s
+        self.err_hi = s
 
 
 class ConstantPredictor(TimeSeriesPredictor):
@@ -197,8 +192,10 @@ def slice_time_series(epoch_size, time_series):
 
 with Flow("training") as flow:
     data = load_data()
-    ts = build_time_series(data)
-    big_task(ts)
+    ts = build_time_series(data, ["Zirl", "Innsbruck"])
+    train, test = split_data(ts)
+    model = train_model(train, test)
+    visualize(model, ts)
 
 
 if __name__ == "__main__":
