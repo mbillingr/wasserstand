@@ -6,6 +6,7 @@ pandas
 prefect
 s3fs
 scikit-learn
+xarray
 
 # dev
 black

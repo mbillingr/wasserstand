@@ -2,22 +2,24 @@ from abc import abstractmethod
 
 import dask.dataframe
 import dask.array as da
-from dask.distributed import Client
 from prefect import Flow, task
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
+import xarray as xr
 
 from config import DATAFILE_ALL
 
 
 @task
-def big_task(source=DATAFILE_ALL):
-    client = Client()
+def load_data(source=DATAFILE_ALL):
+    data = dask.dataframe.read_parquet(source)
+    data = data.persist()  # big performance boost (and reduced network traffic)
+    return data
 
-    dataframe = dask.dataframe.read_parquet(source)
 
+@task
+def build_time_series(dataframe):
     stations = {
         id: name
         for _, (id, name) in dataframe[["Stationsnummer", "Stationsname"]]
@@ -26,28 +28,41 @@ def big_task(source=DATAFILE_ALL):
     }
 
     station_series = []
-    all_times = []
+    times = None
     for s in stations:
         sdf = dataframe[dataframe["Stationsnummer"] == s]
-        # sdf.compute().to_csv(f"../data/{stations[s]}.csv")
 
-        times = sdf["timestamp_utc"].values
+        t = sdf["timestamp_utc"].values
         series = sdf["Wert"].values
         station_series.append(series)
 
-        all_times.append(times)
+        if times is not None:
+            assert (times == t).all().compute()
+        times = t
 
     times = times.compute()
 
-    time_series = (
+    ts_data = (
         da.concatenate([station_series], allow_unknown_chunksizes=True)
-        .T.compute_chunk_sizes()
-        .persist()
+        .T.persist()
+        .compute_chunk_sizes()
     )
 
-    idx1 = list(stations.values()).index("Zirl")
-    idx2 = list(stations.values()).index("Innsbruck")
-    time_series = time_series[:, [idx1, idx2]]
+    ts_data = xr.DataArray(
+        data=ts_data,
+        dims=["time", "station"],
+        coords={"time": times, "station": list(stations.values())},
+    )
+
+    return ts_data
+
+
+@task
+def big_task(time_series):
+    times = time_series.time.data
+    print(times)
+
+    time_series = time_series.sel(station=["Zirl", "Innsbruck"])
 
     x0 = time_series[0]
     # time_series = da.diff(time_series, axis=0)
@@ -61,14 +76,14 @@ def big_task(source=DATAFILE_ALL):
     test = epochs[1::2]
 
     model = UnivariateLinearPredictor(order=MODEL_ORDER)
-    model.fit(train)
+    model.fit(train.data)
 
-    err = estimate_prediction_error(model, N_PREDICT, test)
+    err = estimate_prediction_error(model, N_PREDICT, test.data)
     s = da.std(err, axis=0)[:, 1].compute()
 
     print("============")
 
-    pred = model.predict(N_PREDICT, time_series).compute()
+    pred = model.predict(N_PREDICT, time_series.data).compute()
 
     # time_series = x0 + da.cumsum(time_series, axis=0)
     # pred = time_series[-1] + np.cumsum(pred, axis=0)
@@ -166,14 +181,24 @@ def slice_time_series(epoch_size, time_series):
     n, m = time_series.shape
 
     n_drop = n - epoch_size * (n // epoch_size)
+    truncated = time_series[n_drop:]
 
-    return time_series[n_drop:].reshape(-1, epoch_size, m)
+    data = truncated.data.reshape(-1, epoch_size, m)
+
+    return xr.DataArray(
+        data,
+        dims=["epoch", "t", "station"],
+        coords={
+            "station": time_series.station,
+            "time": (["epoch", "t"], truncated.time.data.reshape(-1, epoch_size)),
+        },
+    )
 
 
 with Flow("training") as flow:
-    big_task()
-    # data = load_data()
-    # extract_time_series(data)
+    data = load_data()
+    ts = build_time_series(data)
+    big_task(ts)
 
 
 if __name__ == "__main__":
