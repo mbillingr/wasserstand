@@ -1,6 +1,7 @@
 import pandas as pd
 import prefect
 from prefect import Flow, task
+from prefect.schedules import IntervalSchedule
 import numpy as np
 import datetime
 
@@ -27,6 +28,11 @@ def fetch_latest_level_data(url):
     return pd.read_csv(
         url, encoding="ISO-8859-1", sep=";", parse_dates=[SOURCE_TIMESTAMP_COLUMN]
     )
+
+
+@task
+def fetch_raw(url):
+    return load_data(url)
 
 
 @task
@@ -105,22 +111,17 @@ def split_days(df):
 
 
 @task
-def update_daydata(date, new_df):
-    logger = prefect.context.get("logger")
-
-    new_df = new_df.reset_index(drop=True)
-
-    try:
-        df = load_data(date.strftime(DATAFILE_TEMPLATE))
-        n_old = len(df)
-        df = pd.concat([df, new_df]).drop_duplicates(keep='last', ignore_index=True)
-        logger.info(f"Added {len(df) - n_old} rows to {date} data")
-    except FileNotFoundError:
-        df = new_df
-        logger.info(f"Initialized {date} data with {len(df)} rows")
-
+def merge_datasets(date, df1, df2):
+    df = pd.concat([df1, df2])
+    df = df.drop_duplicates(
+        subset=["Stationsnummer", "timestamp_utc"], keep="last", ignore_index=True
+    )
     df = df.sort_values(["Stationsnummer", "timestamp_utc"])
-    store_data(date.strftime(DATAFILE_TEMPLATE), df)
+
+    logger = prefect.context.get("logger")
+    logger.info(f"Added {len(df) - len(df1)} rows to {date} data")
+
+    return df
 
 
 @task
@@ -134,6 +135,21 @@ def store_raw_data(df):
     store_data(url, df)
 
 
+@task
+def store_day_data(date, df):
+    store_data(date.strftime(DATAFILE_TEMPLATE), df)
+
+
+@task
+def load_day_data(date):
+    try:
+        data = load_data(date.strftime(DATAFILE_TEMPLATE))
+        return data
+    except FileNotFoundError:
+        prefect.context.get("logger").info(f"Initialize {date} data")
+        return pd.DataFrame()
+
+
 def store_data(url, df):
     df.to_parquet(url, index=False)
 
@@ -142,16 +158,34 @@ def load_data(url):
     return pd.read_parquet(url)
 
 
-with Flow("fetch-water-data") as flow:
+schedule = IntervalSchedule(
+    start_date=datetime.datetime(
+        2021,
+        10,
+        1,
+        hour=1,
+        minute=23,
+        tzinfo=datetime.datetime.now().astimezone().tzinfo,
+    ),
+    interval=datetime.timedelta(hours=8),
+)
+
+with Flow("fetch-water-data", schedule) as flow:
     level_data = fetch_latest_level_data(DATA_SOURCE_URL)
     store_raw_data(level_data)
+
+    # use this instead of above for recovery; adjust file names manually
+    # level_data = fetch_raw('s3://kazemakase-data/raw/2021-10-11-21:34.parquet')
+
     level_data = remove_bad_rows(level_data)
     level_data = convert_timestamp(level_data)
     level_data = downsample(level_data)
     level_data = interpolate_missing(level_data)
     store_latest_data(level_data)
 
-    dates, levels = split_days(level_data)
-    update_daydata.map(dates, levels)
+    dates, new_day_data = split_days(level_data)
+    existing_day_data = load_day_data.map(dates)
+    day_data = merge_datasets.map(dates, existing_day_data, new_day_data)
+    store_day_data.map(dates, day_data)
 
 flow.run()
