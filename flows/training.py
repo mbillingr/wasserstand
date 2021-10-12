@@ -1,14 +1,16 @@
 from abc import abstractmethod
+import pickle
 
 import dask.dataframe
 import dask.array as da
 from prefect import Flow, task
 import matplotlib.pyplot as plt
+import mlflow
 import numpy as np
-from sklearn.linear_model import LinearRegression
 import xarray as xr
 
 from config import DATAFILE_ALL
+from models.univariate import UnivariateLinearPredictor
 
 
 @task
@@ -54,6 +56,7 @@ def build_time_series(dataframe, stations=None):
 
 @task(nout=2)
 def split_data(time_series, epoch_size=20):
+    mlflow.log_param("epoch_size", epoch_size)
     epochs = slice_time_series(epoch_size, time_series)
     train = epochs[::2]
     test = epochs[1::2]
@@ -62,6 +65,8 @@ def split_data(time_series, epoch_size=20):
 
 @task
 def train_model(train, test, n_predict=10, model_order=10):
+    mlflow.log_param("model_order", model_order)
+    mlflow.log_param("n_predict", n_predict)
     model = UnivariateLinearPredictor(order=model_order)
     model.fit(train.data)
     model.estimate_prediction_error(n_predict, test.data)
@@ -69,7 +74,14 @@ def train_model(train, test, n_predict=10, model_order=10):
 
 
 @task
-def visualize(model, time_series, n_predict=20):
+def store_model(model):
+    with open("../artifacts/model.pickle", "wb") as fd:
+        pickle.dump(model, fd)
+    mlflow.log_artifact("../artifacts/model.pickle")
+
+
+@task
+def visualize(model, time_series, n_predict=50):
     pred = model.predict(n_predict, time_series.data).compute()
 
     pred = da.concatenate([time_series[-1:], pred], axis=0)
@@ -92,84 +104,11 @@ def visualize(model, time_series, n_predict=20):
     plt.plot(times, time_series[:, 1], label="measured")
     plt.grid()
     plt.legend()
+
+    plt.savefig("../artifacts/prediction.png")
+    mlflow.log_artifact("../artifacts/prediction.png")
+
     plt.show()
-
-
-class TimeSeriesPredictor:
-    @abstractmethod
-    def fit(self, epochs):
-        return self
-
-    @abstractmethod
-    def predict_next(self, time_series):
-        pass
-
-    def predict(self, n, time_series):
-        for _ in range(n):
-            time_series = da.concatenate(
-                [time_series, self.predict_next(time_series)], axis=0
-            )
-        return time_series[-n:, :]
-
-    def estimate_prediction_error(self, n, test_epochs):
-        err = estimate_prediction_error(self, n, test_epochs)
-        s = da.std(err, axis=0)[:, 1].compute()
-        self.err_low = -s
-        self.err_hi = s
-
-
-class ConstantPredictor(TimeSeriesPredictor):
-    def fit(self, epochs):
-        return self
-
-    def predict_next(self, time_series):
-        time_series.compute_chunk_sizes()
-        return time_series[-1:, :]
-
-
-class UnivariateLinearPredictor(TimeSeriesPredictor):
-    def __init__(self, order):
-        self.order = order
-
-    def fit(self, epochs):
-        _, n, m = epochs.shape
-
-        x, y = [], []
-        for epoch in epochs:
-            for k in range(self.order, n):
-                x_row = epoch[k - self.order : k]
-                y_row = epoch[k]
-                x.append(x_row)
-                y.append(y_row)
-
-        x = da.stack(x)
-        y = da.stack(y)
-
-        self.models = []
-        for i in range(m):
-            model = LinearRegression()
-            model.fit(x[..., i], y[:, i])
-            self.models.append(model)
-
-        return self
-
-    def predict_next(self, time_series):
-        x = time_series[-self.order :]
-
-        preds = [m.predict(x[None, ..., i]) for i, m in enumerate(self.models)]
-        print(preds)
-        preds = da.stack(preds, axis=1)
-        return preds
-
-
-def estimate_prediction_error(model, n, epochs):
-    all_errors = []
-    for epoch in epochs:
-        known = epoch[:-n]
-        predictions = model.predict(n, known)
-        errors = predictions - epoch[-n:]
-        all_errors.append(errors)
-    return da.stack(all_errors)
 
 
 def slice_time_series(epoch_size, time_series):
@@ -195,6 +134,7 @@ with Flow("training") as flow:
     ts = build_time_series(data, ["Zirl", "Innsbruck"])
     train, test = split_data(ts)
     model = train_model(train, test)
+    store_model(model)
     visualize(model, ts)
 
 
