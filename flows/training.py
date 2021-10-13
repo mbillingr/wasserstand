@@ -3,6 +3,7 @@ import pickle
 
 import dask.dataframe
 import dask.array as da
+import prefect
 from prefect import Flow, task
 import matplotlib.pyplot as plt
 import mlflow
@@ -11,6 +12,7 @@ import xarray as xr
 
 from config import DATAFILE_ALL
 from models.univariate import UnivariatePredictor
+from models.time_series_predictor import fix_epoch_dims
 
 
 @task
@@ -64,7 +66,7 @@ def split_data(time_series, epoch_size=20):
 
 
 @task
-def train_model(train, test, n_predict=10, model_order=10):
+def train_model(train, test, n_predict=10, model_order=5):
     mlflow.log_param("model_order", model_order)
     mlflow.log_param("n_predict", n_predict)
     model = UnivariatePredictor(order=model_order)
@@ -81,24 +83,24 @@ def store_model(model):
 
 
 @task
-def visualize(model, time_series, n_predict=50):
+def visualize(model, time_series, n_predict=50, station="Innsbruck"):
     pred = model.predict(n_predict, time_series).compute()
 
     # predictions for which we have an error estimate
-    pred_err = pred[: len(model.err_low)]
+    pred_err = pred[: len(model.err_low)].sel(station=station)
 
     # add last known value to avoid gap between measured and forcast curves
     pred = xr.concat([time_series[-1:], pred], dim="time")
 
-    plt.plot(pred.time, pred[:, 1], "--", label="forecast")
+    plt.plot(pred.time, pred.sel(station=station), "--", label="forecast")
     plt.fill_between(
         pred_err.time,
-        pred_err[:, 1] + model.err_low,
-        pred_err[:, 1] + model.err_hi,
+        pred_err + model.err_low,
+        pred_err + model.err_hi,
         alpha=0.3,
         label="uncertainty",
     )
-    plt.plot(time_series.time, time_series[:, 1], label="measured")
+    plt.plot(time_series.time, time_series.sel(station=station), label="measured")
     plt.grid()
     plt.legend()
 
@@ -106,6 +108,22 @@ def visualize(model, time_series, n_predict=50):
     mlflow.log_artifact("../artifacts/prediction.png")
 
     plt.show()
+
+
+@task
+def evaluate(model, epochs):
+    residuals = []
+    for epoch in epochs:
+        epoch = fix_epoch_dims(epoch)
+        pred = model.simulate(epoch)
+        residuals.append(epoch - pred)
+    residuals = da.stack(residuals)
+    rmse = da.sqrt(da.mean(residuals ** 2)).compute()
+
+    mlflow.log_metric("RMSE", rmse)
+    logger = prefect.context.get("logger")
+    logger.info(f"RMSE: {rmse}")
+    return rmse
 
 
 def slice_time_series(epoch_size, time_series):
@@ -132,6 +150,7 @@ with Flow("training") as flow:
     train, test = split_data(ts)
     model = train_model(train, test)
     store_model(model)
+    evaluate(model, test)
     visualize(model, ts)
 
 

@@ -9,6 +9,7 @@ class UnivariatePredictor(TimeSeriesPredictor):
         super().__init__()
         self.order = order
         self.predictor_factory = predictor_factory
+        self.models_ = []
 
     def fit_raw(self, raw_epochs):
         _, n, m = raw_epochs.shape
@@ -24,16 +25,16 @@ class UnivariatePredictor(TimeSeriesPredictor):
         x = da.stack(x)
         y = da.stack(y)
 
-        self.models = []
+        self.models_ = []
         for i in range(m):
             model = self.predictor_factory()
             model.fit(x[..., i], y[:, i])
-            self.models.append(model)
+            self.models_.append(model)
 
         return self
 
     def predict_next(self, time_series):
         x = time_series[-self.order :]
-        preds = [m.predict(x[None, ..., i]) for i, m in enumerate(self.models)]
+        preds = [m.predict(x[None, ..., i]) for i, m in enumerate(self.models_)]
         preds = da.stack(preds, axis=1)
         return preds
