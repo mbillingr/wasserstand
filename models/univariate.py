@@ -4,7 +4,7 @@ from sklearn.linear_model import LinearRegression
 from models.time_series_predictor import TimeSeriesPredictor
 
 
-class UnivariateLinearPredictor(TimeSeriesPredictor):
+class UnivariatePredictor(TimeSeriesPredictor):
     def __init__(self, order, predictor_factory=LinearRegression):
         super().__init__()
         self.order = order

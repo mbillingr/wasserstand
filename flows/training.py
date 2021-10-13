@@ -10,7 +10,7 @@ import numpy as np
 import xarray as xr
 
 from config import DATAFILE_ALL
-from models.univariate import UnivariateLinearPredictor
+from models.univariate import UnivariatePredictor
 
 
 @task
@@ -67,7 +67,7 @@ def split_data(time_series, epoch_size=20):
 def train_model(train, test, n_predict=10, model_order=10):
     mlflow.log_param("model_order", model_order)
     mlflow.log_param("n_predict", n_predict)
-    model = UnivariateLinearPredictor(order=model_order)
+    model = UnivariatePredictor(order=model_order)
     model.fit(train)
     model.estimate_prediction_error(n_predict, test)
     return model
