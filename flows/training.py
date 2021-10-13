@@ -4,13 +4,14 @@ import pickle
 import dask.dataframe
 import dask.array as da
 import prefect
-from prefect import Flow, task
+from prefect import Flow, task, unmapped
 import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import xarray as xr
 
 from config import DATAFILE_ALL
+from models.multivariate import MultivariatePredictor
 from models.univariate import UnivariatePredictor
 from models.time_series_predictor import fix_epoch_dims
 
@@ -66,12 +67,13 @@ def split_data(time_series, epoch_size=20):
 
 
 @task
-def train_model(train, test, n_predict=10, model_order=5):
-    mlflow.log_param("model_order", model_order)
-    mlflow.log_param("n_predict", n_predict)
-    model = UnivariatePredictor(order=model_order)
+def train_model(train, test, n_predict=10, model_order=4):
+    model = MultivariatePredictor(order=model_order)
     model.fit(train)
     model.estimate_prediction_error(n_predict, test)
+    mlflow.log_param("model_order", model_order)
+    mlflow.log_param("n_predict", n_predict)
+    mlflow.log_param("model", model.__class__.__name__)
     return model
 
 
@@ -107,22 +109,29 @@ def visualize(model, time_series, n_predict=50, station="Innsbruck"):
     plt.savefig("../artifacts/prediction.png")
     mlflow.log_artifact("../artifacts/prediction.png")
 
+    plt.title(station)
+
     plt.show()
 
 
 @task
-def evaluate(model, epochs):
+def evaluate(model, epochs, station=None):
     residuals = []
     for epoch in epochs:
         epoch = fix_epoch_dims(epoch)
         pred = model.simulate(epoch)
-        residuals.append(epoch - pred)
+        r = epoch - pred
+        if station is not None:
+            r = r.sel(station=station)
+        residuals.append(r)
     residuals = da.stack(residuals)
     rmse = da.sqrt(da.mean(residuals ** 2)).compute()
 
-    mlflow.log_metric("RMSE", rmse)
+    key = "RMSE" if station is None else f"RMSE.{station}"
+
+    mlflow.log_metric(key, rmse)
     logger = prefect.context.get("logger")
-    logger.info(f"RMSE: {rmse}")
+    logger.info(f"{key}: {rmse}")
     return rmse
 
 
@@ -150,7 +159,7 @@ with Flow("training") as flow:
     train, test = split_data(ts)
     model = train_model(train, test)
     store_model(model)
-    evaluate(model, test)
+    evaluate.map(unmapped(model), unmapped(test), station=[None, "Zirl", "Innsbruck"])
     visualize(model, ts)
 
 
