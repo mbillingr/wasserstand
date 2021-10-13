@@ -1,15 +1,14 @@
 import dask.dataframe
 import dask.array as da
 import prefect
-from prefect import Flow, task, unmapped
+from prefect import Flow, task
 import matplotlib.pyplot as plt
 import mlflow
 import xarray as xr
+import json
 
 from config import DATAFILE_ALL
-from models.multivariate import MultivariatePredictor
-from models.univariate import UnivariatePredictor
-from models.time_series_predictor import fix_epoch_dims
+from models.time_series_predictor import fix_epoch_dims, TimeSeriesPredictor
 
 
 @task
@@ -53,39 +52,33 @@ def build_time_series(dataframe, stations=None):
     return time_series
 
 
-@task(nout=2)
-def split_data(time_series, epoch_size=20):
-    mlflow.log_param("epoch_size", epoch_size)
-    epochs = slice_time_series(epoch_size, time_series)
-    train = epochs[::2]
-    test = epochs[1::2]
-    return train, test
-
-
 @task
-def train_model(train, test, n_predict=10, model_order=4):
-    model = MultivariatePredictor(order=model_order)
-    model.fit(train)
-    model.estimate_prediction_error(n_predict, test)
-    mlflow.log_param("model_order", model_order)
-    mlflow.log_param("n_predict", n_predict)
-    mlflow.log_param("model", model.__class__.__name__)
-    return model
+def load_model(path="../artifacts/model.pickle"):
+    with open(path, "rb") as fd:
+        return TimeSeriesPredictor.deserialize(fd)
 
 
-@task
-def store_model(model):
-    with open("../artifacts/model.pickle", "wb") as fd:
-        model.serialize(fd)
-    mlflow.log_artifact("../artifacts/model.pickle")
-
-
-@task
-def visualize(model, time_series, n_predict=50, station="Innsbruck"):
+@task(nout=3)
+def predict(model, time_series, n_predict=50):
     pred = model.predict(n_predict, time_series).compute()
+    err_low = model.err_low
+    err_hi = model.err_hi
+
+    pred_data = pred.to_dict()
+    pred_data["coords"]["time"]["data"] = [
+        t.strftime("%Y-%m-%d-%H:%M") for t in pred_data["coords"]["time"]["data"]
+    ]
+    with open("../artifacts/prediction.json", "wt") as fd:
+        json.dump(pred_data, fd)
+
+    return pred, err_low, err_hi
+
+
+@task
+def visualize(pred, err_low, err_hi, time_series, station="Innsbruck"):
 
     # predictions for which we have an error estimate
-    pred_err = pred[: len(model.err_low)].sel(station=station)
+    pred_err = pred[: len(err_low)].sel(station=station)
 
     # add last known value to avoid gap between measured and forcast curves
     pred = xr.concat([time_series[-1:], pred], dim="time")
@@ -93,8 +86,8 @@ def visualize(model, time_series, n_predict=50, station="Innsbruck"):
     plt.plot(pred.time, pred.sel(station=station), "--", label="forecast")
     plt.fill_between(
         pred_err.time,
-        pred_err + model.err_low,
-        pred_err + model.err_hi,
+        pred_err + err_low,
+        pred_err + err_hi,
         alpha=0.3,
         label="uncertainty",
     )
@@ -149,14 +142,12 @@ def slice_time_series(epoch_size, time_series):
     )
 
 
-with Flow("training") as flow:
+with Flow("predict") as flow:
     data = load_data()
     ts = build_time_series(data, ["Zirl", "Innsbruck"])
-    train, test = split_data(ts)
-    model = train_model(train, test)
-    store_model(model)
-    evaluate.map(unmapped(model), unmapped(test), station=[None, "Zirl", "Innsbruck"])
-    visualize(model, ts)
+    model = load_model()
+    prediction, err_lo, err_hi = predict(model, ts)
+    visualize(prediction, err_lo, err_hi, ts)
 
 
 if __name__ == "__main__":
