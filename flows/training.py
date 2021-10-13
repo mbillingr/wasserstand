@@ -80,7 +80,7 @@ def train_model(train, test, n_predict=10, model_order=4):
 @task
 def store_model(model):
     with open("../artifacts/model.pickle", "wb") as fd:
-        pickle.dump(model, fd)
+        model.serialize(fd)
     mlflow.log_artifact("../artifacts/model.pickle")
 
 

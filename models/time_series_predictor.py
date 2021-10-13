@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import pickle
 
 import dask.array as da
 import xarray as xr
@@ -56,6 +57,15 @@ class TimeSeriesPredictor:
         s = da.std(err, axis=0)[:, 1].compute()
         self.err_low = -s
         self.err_hi = s
+
+    def serialize(self, file_descriptor):
+        pickle.dump(self, file_descriptor)
+
+    @staticmethod
+    def deserialize(file_descriptor):
+        model = pickle.load(file_descriptor)
+        assert isinstance(model, TimeSeriesPredictor)
+        return model
 
 
 def estimate_prediction_error(model, n, epochs):
