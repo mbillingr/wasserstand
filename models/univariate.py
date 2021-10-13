@@ -6,14 +6,15 @@ from models.time_series_predictor import TimeSeriesPredictor
 
 class UnivariateLinearPredictor(TimeSeriesPredictor):
     def __init__(self, order, predictor_factory=LinearRegression):
+        super().__init__()
         self.order = order
         self.predictor_factory = predictor_factory
 
-    def fit(self, epochs):
-        _, n, m = epochs.shape
+    def fit_raw(self, raw_epochs):
+        _, n, m = raw_epochs.shape
 
         x, y = [], []
-        for epoch in epochs:
+        for epoch in raw_epochs:
             for k in range(self.order, n):
                 x_row = epoch[k - self.order : k]
                 y_row = epoch[k]
