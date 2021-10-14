@@ -188,4 +188,5 @@ with Flow("fetch-water-data", schedule) as flow:
     day_data = merge_datasets.map(dates, existing_day_data, new_day_data)
     store_day_data.map(dates, day_data)
 
-flow.run()
+if __name__ == '__main__':
+    flow.run()
