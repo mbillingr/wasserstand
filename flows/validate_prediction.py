@@ -7,7 +7,7 @@ import xarray as xr
 import json
 from datetime import datetime
 
-from config import DATAFILE_ALL
+from wasserstand.config import DATAFILE_ALL
 
 
 @task

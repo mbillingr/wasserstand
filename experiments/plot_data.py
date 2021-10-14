@@ -1,7 +1,7 @@
 import dask.dataframe
 import matplotlib.pyplot as plt
 
-from config import DATAFILE_ALL
+from wasserstand.config import DATAFILE_ALL
 
 water_data = dask.dataframe.read_parquet(DATAFILE_ALL)
 

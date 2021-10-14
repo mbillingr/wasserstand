@@ -7,8 +7,8 @@ import mlflow
 import xarray as xr
 import json
 
-from config import DATAFILE_ALL
-from models.time_series_predictor import fix_epoch_dims, TimeSeriesPredictor
+from wasserstand.config import DATAFILE_ALL
+from wasserstand.models.time_series_predictor import fix_epoch_dims, TimeSeriesPredictor
 
 
 @task

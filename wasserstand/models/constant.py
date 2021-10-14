@@ -1,4 +1,4 @@
-from models.time_series_predictor import TimeSeriesPredictor
+from wasserstand.models.time_series_predictor import TimeSeriesPredictor
 
 
 class ConstantPredictor(TimeSeriesPredictor):

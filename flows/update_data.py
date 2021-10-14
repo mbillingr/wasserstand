@@ -5,7 +5,7 @@ from prefect.schedules import IntervalSchedule
 import numpy as np
 import datetime
 
-from config import (
+from wasserstand.config import (
     DATA_SOURCE_URL,
     DATAFILE_TEMPLATE,
     DATAFILE_LATEST,

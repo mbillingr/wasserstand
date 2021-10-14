@@ -6,10 +6,9 @@ import matplotlib.pyplot as plt
 import mlflow
 import xarray as xr
 
-from config import DATAFILE_ALL
-from models.multivariate import MultivariatePredictor
-from models.univariate import UnivariatePredictor
-from models.time_series_predictor import fix_epoch_dims
+from wasserstand.config import DATAFILE_ALL
+from wasserstand.models.multivariate import MultivariatePredictor
+from wasserstand.models.time_series_predictor import fix_epoch_dims
 
 
 @task

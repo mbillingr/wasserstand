@@ -4,7 +4,7 @@ import prefect
 from prefect import Flow, task
 import s3fs
 
-from config import DATA_ROOT, RESAMPLE_TO_MINUTES, SAMPLE_INTERVAL_MINUTES
+from wasserstand.config import DATA_ROOT, RESAMPLE_TO_MINUTES, SAMPLE_INTERVAL_MINUTES
 
 SOURCE_TIMESTAMP_COLUMN = "Zeitstempel in ISO8601"
 VALUE_COLUMN = "Wert"
