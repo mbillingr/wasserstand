@@ -9,4 +9,4 @@ flow.storage = GitHub(
     path="flows/update_data_cloud.py",
 )
 
-flow.run_config = ECSRun()
+flow.run_config = ECSRun(image="kazemakase/wasserstand:latest")
