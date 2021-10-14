@@ -11,3 +11,7 @@ class ConstantPredictor(TimeSeriesPredictor):
     def predict_next(self, time_series):
         time_series.compute_chunk_sizes()
         return time_series[-1:, :]
+
+    @property
+    def min_samples(self):
+        return 1

@@ -16,6 +16,7 @@ from models.time_series_predictor import fix_epoch_dims
 def load_data(source=DATAFILE_ALL):
     data = dask.dataframe.read_parquet(source)
     data = data.persist()  # big performance boost (and reduced network traffic)
+    data = data.fillna(method="ffill")
     return data
 
 
@@ -151,7 +152,7 @@ def slice_time_series(epoch_size, time_series):
 
 with Flow("training") as flow:
     data = load_data()
-    ts = build_time_series(data, ["Zirl", "Innsbruck"])
+    ts = build_time_series(data)
     train, test = split_data(ts)
     model = train_model(train, test)
     store_model(model)

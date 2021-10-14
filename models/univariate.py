@@ -11,6 +11,10 @@ class UnivariatePredictor(TimeSeriesPredictor):
         self.predictor_factory = predictor_factory
         self.models_ = []
 
+    @property
+    def min_samples(self):
+        return self.order
+
     def fit_raw(self, raw_epochs):
         _, n, m = raw_epochs.shape
 

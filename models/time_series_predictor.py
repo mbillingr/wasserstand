@@ -19,6 +19,11 @@ class TimeSeriesPredictor:
     def predict_next(self, time_series):
         pass
 
+    @property
+    @abstractmethod
+    def min_samples(self):
+        raise NotImplementedError()
+
     def fit(self, epochs):
         self.meta_info["stations"] = epochs.station.to_dict()["data"]
         self.meta_info["fitted"] = {
@@ -38,12 +43,9 @@ class TimeSeriesPredictor:
     def simulate(self, time_series):
         time_delta = time_series.time[1] - time_series.time[0]
         predictions = []
-        for k in range(len(time_series)):
-            try:
-                p = self._predict_xr(time_delta, time_series[:k])
-                predictions.append(p)
-            except ValueError:
-                pass
+        for k in range(self.min_samples, len(time_series)):
+            p = self._predict_xr(time_delta, time_series[:k])
+            predictions.append(p)
         return xr.concat(predictions, dim="time")
 
     def _predict_xr(self, time_delta, time_series):
@@ -54,7 +56,7 @@ class TimeSeriesPredictor:
 
     def estimate_prediction_error(self, n, test_epochs):
         err = estimate_prediction_error(self, n, test_epochs)
-        s = da.std(err, axis=0)[:, 1].compute()
+        s = da.std(err, axis=0)[:, 1]
         self.err_low = -s
         self.err_hi = s
 
