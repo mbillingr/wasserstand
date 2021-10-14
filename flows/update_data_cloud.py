@@ -1,7 +1,7 @@
 from prefect.run_configs import ECSRun
 from prefect.storage import GitHub
 
-from update_data import flow
+from flows.update_data import flow
 
 
 flow.storage = GitHub(
