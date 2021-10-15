@@ -1,6 +1,6 @@
 import dask.dataframe
 import dask.array as da
-from prefect import Flow, task
+from prefect import Flow, task, Parameter
 import matplotlib.pyplot as plt
 import mlflow
 import xarray as xr
@@ -99,10 +99,11 @@ def slice_time_series(epoch_size, time_series):
 
 
 with Flow("predict") as flow:
-    prediction = load_prediction("../artifacts/_prediction.json")
+    station = Parameter("station", default="Innsbruck")
+    prediction = load_prediction("../artifacts/prediction.json")
     data = load_data()
-    ts = build_time_series(data, ["Zirl", "Innsbruck"])
-    visualize(prediction, ts)
+    ts = build_time_series(data, [station])
+    visualize(prediction, ts, station=station)
 
 
 if __name__ == "__main__":

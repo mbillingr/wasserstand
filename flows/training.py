@@ -8,6 +8,8 @@ import xarray as xr
 
 from wasserstand.config import DATAFILE_ALL
 from wasserstand.models.multivariate import MultivariatePredictor
+from wasserstand.models.univariate import UnivariatePredictor
+from wasserstand.models.constant import ConstantPredictor
 from wasserstand.models.time_series_predictor import fix_epoch_dims
 
 
@@ -63,13 +65,19 @@ def split_data(time_series, epoch_size=20):
 
 
 @task
-def train_model(train, test, n_predict=10, model_order=4):
-    model = MultivariatePredictor(order=model_order)
-    model.fit(train)
-    model.estimate_prediction_error(n_predict, test)
+def train_model(train, model_order=4):
+    model = UnivariatePredictor(order=model_order)
     mlflow.log_param("model_order", model_order)
-    mlflow.log_param("n_predict", n_predict)
+    model.fit(train)
+    mlflow.log_param("train_size", model.meta_info["fitted"]["x.shape"])
     mlflow.log_param("model", model.__class__.__name__)
+    return model
+
+
+@task
+def quantify_model(model, test, n_predict=10):
+    mlflow.log_param("n_predict", n_predict)
+    model.estimate_prediction_error(n_predict, test)
     return model
 
 
@@ -85,7 +93,7 @@ def visualize(model, time_series, n_predict=50, station="Innsbruck"):
     pred = model.predict(n_predict, time_series).compute()
 
     # predictions for which we have an error estimate
-    pred_err = pred[: len(model.err_low)].sel(station=station)
+    pred_err = pred[: len(model.err_low)]
 
     # add last known value to avoid gap between measured and forcast curves
     pred = xr.concat([time_series[-1:], pred], dim="time")
@@ -93,8 +101,8 @@ def visualize(model, time_series, n_predict=50, station="Innsbruck"):
     plt.plot(pred.time, pred.sel(station=station), "--", label="forecast")
     plt.fill_between(
         pred_err.time,
-        pred_err + model.err_low,
-        pred_err + model.err_hi,
+        (pred_err + model.err_low).sel(station=station),
+        (pred_err + model.err_hi).sel(station=station),
         alpha=0.3,
         label="uncertainty",
     )
@@ -153,7 +161,8 @@ with Flow("training") as flow:
     data = load_data()
     ts = build_time_series(data)
     train, test = split_data(ts)
-    model = train_model(train, test)
+    model = train_model(train)
+    model = quantify_model(model, test)
     store_model(model)
     evaluate.map(unmapped(model), unmapped(test), station=[None, "Zirl", "Innsbruck"])
     visualize(model, ts)

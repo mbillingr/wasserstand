@@ -58,40 +58,44 @@ def load_model(path="../artifacts/model.pickle"):
         return TimeSeriesPredictor.deserialize(fd)
 
 
-@task(nout=3)
+@task
 def predict(model, time_series, n_predict=50):
     pred = model.predict(n_predict, time_series).compute()
-    err_low = model.err_low
-    err_hi = model.err_hi
 
-    pred_data = pred.to_dict()
-    pred_data["coords"]["time"]["data"] = [
-        t.strftime("%Y-%m-%d-%H:%M") for t in pred_data["coords"]["time"]["data"]
+    n_confidence = len(model.err_low)
+    tmp = xr.zeros_like(pred[:n_confidence])
+    pred_data = xr.Dataset(
+        {
+            "prediction": pred,
+            "err_lower": tmp + model.err_low,
+            "err_upper": tmp + model.err_hi,
+        }
+    )
+
+    pred_dict = pred.to_dict()
+    pred_dict["coords"]["time"]["data"] = [
+        t.strftime("%Y-%m-%d-%H:%M") for t in pred_dict["coords"]["time"]["data"]
     ]
     with open("../artifacts/prediction.json", "wt") as fd:
-        json.dump(pred_data, fd)
+        json.dump(pred_dict, fd)
 
-    return pred, err_low, err_hi
+    return pred_data
 
 
 @task
-def visualize(pred, err_low, err_hi, time_series, station="Innsbruck"):
+def visualize(pred, time_series, station="Innsbruck"):
+    pred = pred.sel(station=station)
+    time_series = time_series.sel(station=station)
 
-    # predictions for which we have an error estimate
-    pred_err = pred[: len(err_low)].sel(station=station)
-
-    # add last known value to avoid gap between measured and forcast curves
-    pred = xr.concat([time_series[-1:], pred], dim="time")
-
-    plt.plot(pred.time, pred.sel(station=station), "--", label="forecast")
+    plt.plot(pred.time, pred.prediction, "--", label="forecast")
     plt.fill_between(
-        pred_err.time,
-        pred_err + err_low,
-        pred_err + err_hi,
+        pred.time,
+        pred.prediction + pred.err_lower,
+        pred.prediction + pred.err_upper,
         alpha=0.3,
         label="uncertainty",
     )
-    plt.plot(time_series.time, time_series.sel(station=station), label="measured")
+    plt.plot(time_series.time, time_series, label="measured")
     plt.grid()
     plt.legend()
 
@@ -144,10 +148,10 @@ def slice_time_series(epoch_size, time_series):
 
 with Flow("predict") as flow:
     data = load_data()
-    ts = build_time_series(data, ["Zirl", "Innsbruck"])
+    ts = build_time_series(data)
     model = load_model()
-    prediction, err_lo, err_hi = predict(model, ts)
-    visualize(prediction, err_lo, err_hi, ts)
+    prediction = predict(model, ts)
+    visualize(prediction, ts)
 
 
 if __name__ == "__main__":

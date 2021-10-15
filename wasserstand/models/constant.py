@@ -6,6 +6,10 @@ class ConstantPredictor(TimeSeriesPredictor):
         super().__init__()
 
     def fit_raw(self, _):
+        self.meta_info["fitted"] = {
+            "x.shape": (),
+            "y.shape": (),
+        }
         return self
 
     def predict_next(self, time_series):

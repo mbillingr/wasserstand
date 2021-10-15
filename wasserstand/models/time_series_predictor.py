@@ -56,7 +56,7 @@ class TimeSeriesPredictor:
 
     def estimate_prediction_error(self, n, test_epochs):
         err = estimate_prediction_error(self, n, test_epochs)
-        s = da.std(err, axis=0)[:, 1]
+        s = da.std(err, axis=0)
         self.err_low = -s
         self.err_hi = s
 

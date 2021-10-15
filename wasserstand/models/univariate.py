@@ -29,6 +29,11 @@ class UnivariatePredictor(TimeSeriesPredictor):
         x = da.stack(x)
         y = da.stack(y)
 
+        self.meta_info["fitted"] = {
+            "x.shape": x.shape,
+            "y.shape": y.shape,
+        }
+
         self.models_ = []
         for i in range(m):
             model = self.predictor_factory()

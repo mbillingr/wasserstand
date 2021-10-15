@@ -29,6 +29,11 @@ class MultivariatePredictor(TimeSeriesPredictor):
         x = da.stack(x)
         y = da.stack(y)
 
+        self.meta_info["fitted"] = {
+            "x.shape": x.shape,
+            "y.shape": y.shape,
+        }
+
         self.model_ = self.predictor_factory()
         self.model_.fit(x, y)
 
