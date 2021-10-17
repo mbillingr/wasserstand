@@ -4,6 +4,8 @@ DATA_SOURCE_URL = "https://wiski.tirol.gv.at/hydro/ogd/OGD_W.csv"
 
 DATA_ROOT = "s3://kazemakase-data"
 
+MODEL_ROOT = "s3://kazemakase-data/models"
+
 DATAFILE_TAG = "wasser"
 
 DATAFILE_RAW_TEMPLATE = f"{DATA_ROOT}/raw/%Y-%m-%d-%H:%M.parquet"

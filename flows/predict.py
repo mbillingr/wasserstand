@@ -6,6 +6,7 @@ import json
 
 from flows.tasks import dataset
 from flows.tasks import model
+from wasserstand.config import MODEL_ROOT
 
 
 @task
@@ -60,7 +61,7 @@ def visualize(pred, time_series, station="Innsbruck"):
 with Flow("predict") as flow:
     data = dataset.load_data()
     ts = dataset.build_time_series(data)
-    predictor = model.load_model()
+    predictor = model.load_model(MODEL_ROOT + "/latest.pickle")
     prediction = predict(predictor, ts)
     visualize(prediction, ts)
 

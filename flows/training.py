@@ -5,6 +5,7 @@ import xarray as xr
 
 from flows.tasks import dataset
 from flows.tasks import model
+from wasserstand.config import MODEL_ROOT
 
 
 @task
@@ -43,8 +44,10 @@ with Flow("training") as flow:
     train, test = dataset.split_data(ts)
     predictor = model.train_model(train)
     predictor = model.quantify_model(predictor, test)
-    model.store_model(predictor)
-    model.evaluate.map(unmapped(predictor), unmapped(test), station=[None, "Zirl", "Innsbruck"])
+    model.store_model(predictor, MODEL_ROOT + "/latest.pickle")
+    model.evaluate.map(
+        unmapped(predictor), unmapped(test), station=[None, "Zirl", "Innsbruck"]
+    )
     visualize(predictor, ts)
 
 

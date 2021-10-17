@@ -3,6 +3,7 @@ import prefect
 from dask import array as da
 from prefect import task
 
+from flows.tasks.file_access import open_anywhere
 from wasserstand.models.univariate import UnivariatePredictor as Predictor
 from wasserstand.models.time_series_predictor import fix_epoch_dims, TimeSeriesPredictor
 
@@ -25,15 +26,14 @@ def quantify_model(model, test, n_predict=10):
 
 
 @task
-def store_model(model):
-    with open("../artifacts/model.pickle", "wb") as fd:
+def store_model(model, path="../artifacts/model.pickle"):
+    with open_anywhere(path, "wb") as fd:
         model.serialize(fd)
-    mlflow.log_artifact("../artifacts/model.pickle")
 
 
 @task
 def load_model(path="../artifacts/model.pickle"):
-    with open(path, "rb") as fd:
+    with open_anywhere(path, "rb") as fd:
         return TimeSeriesPredictor.deserialize(fd)
 
 
