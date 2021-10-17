@@ -1,5 +1,3 @@
-import dask.dataframe
-import dask.array as da
 from prefect import Flow, task, Parameter
 import matplotlib.pyplot as plt
 import mlflow
@@ -7,7 +5,7 @@ import xarray as xr
 import json
 from datetime import datetime
 
-from wasserstand.config import DATAFILE_ALL
+from flows.tasks import dataset
 
 
 @task
@@ -21,47 +19,6 @@ def load_prediction(source):
     ]
     pred = xr.DataArray.from_dict(pred_data)
     return pred
-
-
-@task
-def load_data(source=DATAFILE_ALL):
-    data = dask.dataframe.read_parquet(source)
-    data = data.persist()  # big performance boost (and reduced network traffic)
-    return data
-
-
-@task
-def build_time_series(dataframe, stations=None):
-    stations = stations or dataframe["Stationsname"].unique()
-
-    station_series = []
-    times = None
-    for s in stations:
-        sdf = dataframe[dataframe["Stationsname"] == s]
-
-        t = sdf["timestamp_utc"].values
-        series = sdf["Wert"].values
-        station_series.append(series)
-
-        if times is not None:
-            assert (times == t).all().compute()
-        times = t
-
-    times = times.compute()
-
-    ts_data = (
-        da.concatenate([station_series], allow_unknown_chunksizes=True)
-        .T.persist()
-        .compute_chunk_sizes()
-    )
-
-    time_series = xr.DataArray(
-        data=ts_data,
-        dims=["time", "station"],
-        coords={"time": times, "station": list(stations)},
-    )
-
-    return time_series
 
 
 @task
@@ -80,29 +37,11 @@ def visualize(pred, time_series, station="Innsbruck"):
     plt.show()
 
 
-def slice_time_series(epoch_size, time_series):
-    n, m = time_series.shape
-
-    n_drop = n - epoch_size * (n // epoch_size)
-    truncated = time_series[n_drop:]
-
-    data = truncated.data.reshape(-1, epoch_size, m)
-
-    return xr.DataArray(
-        data,
-        dims=["epoch", "t", "station"],
-        coords={
-            "station": time_series.station,
-            "time": (["epoch", "t"], truncated.time.data.reshape(-1, epoch_size)),
-        },
-    )
-
-
 with Flow("predict") as flow:
     station = Parameter("station", default="Innsbruck")
     prediction = load_prediction("../artifacts/prediction.json")
-    data = load_data()
-    ts = build_time_series(data, [station])
+    data = dataset.load_data()
+    ts = dataset.build_time_series(data, [station])
     visualize(prediction, ts, station=station)
 
 

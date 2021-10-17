@@ -1,91 +1,10 @@
-import dask.dataframe
-import dask.array as da
-import prefect
 from prefect import Flow, task, unmapped
 import matplotlib.pyplot as plt
 import mlflow
 import xarray as xr
 
-from wasserstand.config import DATAFILE_ALL
-from wasserstand.models.multivariate import MultivariatePredictor
-from wasserstand.models.univariate import UnivariatePredictor
-from wasserstand.models.constant import ConstantPredictor
-from wasserstand.models.time_series_predictor import fix_epoch_dims
-
-
-@task
-def load_data(source=DATAFILE_ALL):
-    data = dask.dataframe.read_parquet(source)
-    data = data.persist()  # big performance boost (and reduced network traffic)
-    data = data.fillna(method="ffill")
-    return data
-
-
-@task
-def build_time_series(dataframe, stations=None):
-    stations = stations or dataframe["Stationsname"].unique()
-
-    station_series = []
-    times = None
-    for s in stations:
-        sdf = dataframe[dataframe["Stationsname"] == s]
-
-        t = sdf["timestamp_utc"].values
-        series = sdf["Wert"].values
-        station_series.append(series)
-
-        if times is not None:
-            assert (times == t).all().compute()
-        times = t
-
-    times = times.compute()
-
-    ts_data = (
-        da.concatenate([station_series], allow_unknown_chunksizes=True)
-        .T.persist()
-        .compute_chunk_sizes()
-    )
-
-    time_series = xr.DataArray(
-        data=ts_data,
-        dims=["time", "station"],
-        coords={"time": times, "station": list(stations)},
-    )
-
-    return time_series
-
-
-@task(nout=2)
-def split_data(time_series, epoch_size=20):
-    mlflow.log_param("epoch_size", epoch_size)
-    epochs = slice_time_series(epoch_size, time_series)
-    train = epochs[::2]
-    test = epochs[1::2]
-    return train, test
-
-
-@task
-def train_model(train, model_order=4):
-    model = UnivariatePredictor(order=model_order)
-    mlflow.log_param("model_order", model_order)
-    model.fit(train)
-    mlflow.log_param("train_size", model.meta_info["fitted"]["x.shape"])
-    mlflow.log_param("model", model.__class__.__name__)
-    return model
-
-
-@task
-def quantify_model(model, test, n_predict=10):
-    mlflow.log_param("n_predict", n_predict)
-    model.estimate_prediction_error(n_predict, test)
-    return model
-
-
-@task
-def store_model(model):
-    with open("../artifacts/model.pickle", "wb") as fd:
-        model.serialize(fd)
-    mlflow.log_artifact("../artifacts/model.pickle")
+from flows.tasks import dataset
+from flows.tasks import model
 
 
 @task
@@ -118,54 +37,15 @@ def visualize(model, time_series, n_predict=50, station="Innsbruck"):
     plt.show()
 
 
-@task
-def evaluate(model, epochs, station=None):
-    residuals = []
-    for epoch in epochs:
-        epoch = fix_epoch_dims(epoch)
-        pred = model.simulate(epoch)
-        r = epoch - pred
-        if station is not None:
-            r = r.sel(station=station)
-        residuals.append(r)
-    residuals = da.stack(residuals)
-    rmse = da.sqrt(da.mean(residuals ** 2)).compute()
-
-    key = "RMSE" if station is None else f"RMSE.{station}"
-
-    mlflow.log_metric(key, rmse)
-    logger = prefect.context.get("logger")
-    logger.info(f"{key}: {rmse}")
-    return rmse
-
-
-def slice_time_series(epoch_size, time_series):
-    n, m = time_series.shape
-
-    n_drop = n - epoch_size * (n // epoch_size)
-    truncated = time_series[n_drop:]
-
-    data = truncated.data.reshape(-1, epoch_size, m)
-
-    return xr.DataArray(
-        data,
-        dims=["epoch", "t", "station"],
-        coords={
-            "station": time_series.station,
-            "time": (["epoch", "t"], truncated.time.data.reshape(-1, epoch_size)),
-        },
-    )
-
-
 with Flow("training") as flow:
-    data = load_data()
-    ts = build_time_series(data)
-    train, test = split_data(ts)
-    model = train_model(train)
-    model = quantify_model(model, test)
-    store_model(model)
-    evaluate.map(unmapped(model), unmapped(test), station=[None, "Zirl", "Innsbruck"])
-    visualize(model, ts)
+    data = dataset.load_data()
+    ts = dataset.build_time_series(data)
+    train, test = dataset.split_data(ts)
+    predictor = model.train_model(train)
+    predictor = model.quantify_model(predictor, test)
+    model.store_model(predictor)
+    model.evaluate.map(unmapped(predictor), unmapped(test), station=[None, "Zirl", "Innsbruck"])
+    visualize(predictor, ts)
 
 
 if __name__ == "__main__":

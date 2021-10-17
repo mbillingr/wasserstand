@@ -1,61 +1,11 @@
-import dask.dataframe
-import dask.array as da
-import prefect
 from prefect import Flow, task
 import matplotlib.pyplot as plt
 import mlflow
 import xarray as xr
 import json
 
-from wasserstand.config import DATAFILE_ALL
-from wasserstand.models.time_series_predictor import fix_epoch_dims, TimeSeriesPredictor
-
-
-@task
-def load_data(source=DATAFILE_ALL):
-    data = dask.dataframe.read_parquet(source)
-    data = data.persist()  # big performance boost (and reduced network traffic)
-    return data
-
-
-@task
-def build_time_series(dataframe, stations=None):
-    stations = stations or dataframe["Stationsname"].unique()
-
-    station_series = []
-    times = None
-    for s in stations:
-        sdf = dataframe[dataframe["Stationsname"] == s]
-
-        t = sdf["timestamp_utc"].values
-        series = sdf["Wert"].values
-        station_series.append(series)
-
-        if times is not None:
-            assert (times == t).all().compute()
-        times = t
-
-    times = times.compute()
-
-    ts_data = (
-        da.concatenate([station_series], allow_unknown_chunksizes=True)
-        .T.persist()
-        .compute_chunk_sizes()
-    )
-
-    time_series = xr.DataArray(
-        data=ts_data,
-        dims=["time", "station"],
-        coords={"time": times, "station": list(stations)},
-    )
-
-    return time_series
-
-
-@task
-def load_model(path="../artifacts/model.pickle"):
-    with open(path, "rb") as fd:
-        return TimeSeriesPredictor.deserialize(fd)
+from flows.tasks import dataset
+from flows.tasks import model
 
 
 @task
@@ -107,50 +57,11 @@ def visualize(pred, time_series, station="Innsbruck"):
     plt.show()
 
 
-@task
-def evaluate(model, epochs, station=None):
-    residuals = []
-    for epoch in epochs:
-        epoch = fix_epoch_dims(epoch)
-        pred = model.simulate(epoch)
-        r = epoch - pred
-        if station is not None:
-            r = r.sel(station=station)
-        residuals.append(r)
-    residuals = da.stack(residuals)
-    rmse = da.sqrt(da.mean(residuals ** 2)).compute()
-
-    key = "RMSE" if station is None else f"RMSE.{station}"
-
-    mlflow.log_metric(key, rmse)
-    logger = prefect.context.get("logger")
-    logger.info(f"{key}: {rmse}")
-    return rmse
-
-
-def slice_time_series(epoch_size, time_series):
-    n, m = time_series.shape
-
-    n_drop = n - epoch_size * (n // epoch_size)
-    truncated = time_series[n_drop:]
-
-    data = truncated.data.reshape(-1, epoch_size, m)
-
-    return xr.DataArray(
-        data,
-        dims=["epoch", "t", "station"],
-        coords={
-            "station": time_series.station,
-            "time": (["epoch", "t"], truncated.time.data.reshape(-1, epoch_size)),
-        },
-    )
-
-
 with Flow("predict") as flow:
-    data = load_data()
-    ts = build_time_series(data)
-    model = load_model()
-    prediction = predict(model, ts)
+    data = dataset.load_data()
+    ts = dataset.build_time_series(data)
+    predictor = model.load_model()
+    prediction = predict(predictor, ts)
     visualize(prediction, ts)
 
 
