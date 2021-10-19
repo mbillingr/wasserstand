@@ -1,3 +1,4 @@
+boto3
 dask
 dask-ml
 fastparquet
@@ -5,9 +6,11 @@ matplotlib
 mlflow
 pandas
 prefect
+pymysql
 s3fs
 scikit-learn
 xarray
 
 # dev
 black
+isort
