@@ -1,0 +1,4 @@
+aws_cdk.core == 1.129
+aws_cdk.aws_ec2 == 1.129
+aws_cdk.aws_ecs == 1.129
+aws_cdk.aws_iam == 1.129
