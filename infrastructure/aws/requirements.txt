@@ -1,4 +1,8 @@
 aws_cdk.core == 1.129
 aws_cdk.aws_ec2 == 1.129
 aws_cdk.aws_ecs == 1.129
+aws_cdk.aws_ecs_patterns == 1.129
 aws_cdk.aws_iam == 1.129
+aws_cdk.aws_rds == 1.129
+aws_cdk.aws_s3 == 1.129
+aws_cdk.aws_secretsmanager == 1.129
