@@ -12,6 +12,7 @@ flow.storage = GitHub(
 )
 
 flow.run_config = ECSRun(
+    labels=["wasserstand"],
     image="kazemakase/wasserstand:latest",
     env={
         "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
