@@ -10,6 +10,7 @@ from wasserstand.config import DATAFILE_ALL
 @task
 def load_data(source=DATAFILE_ALL):
     data = dask.dataframe.read_parquet(source)
+    data["timestamp_utc"] = data["timestamp_utc"].astype("datetime64[ns]")
     data = data.persist()  # big performance boost (and reduced network traffic)
     data = data.fillna(method="ffill")
     return data
