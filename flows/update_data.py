@@ -125,6 +125,12 @@ def merge_datasets(date, df1, df2):
 
 
 @task
+def verify_schema(df):
+    assert df[VALUE_COLUMN].dtype == float
+    assert isinstance(df[TIME_COLUMN].values[0], np.datetime64)
+
+
+@task
 def store_latest_data(df):
     store_data(DATAFILE_LATEST, df)
 
@@ -158,19 +164,7 @@ def load_data(url):
     return pd.read_parquet(url)
 
 
-schedule = IntervalSchedule(
-    start_date=datetime.datetime(
-        2021,
-        10,
-        1,
-        hour=1,
-        minute=23,
-        tzinfo=datetime.datetime.now().astimezone().tzinfo,
-    ),
-    interval=datetime.timedelta(hours=8),
-)
-
-with Flow("fetch-water-data", schedule) as flow:
+with Flow("fetch-water-data") as flow:
     level_data = fetch_latest_level_data(DATA_SOURCE_URL)
     store_raw_data(level_data)
 
@@ -186,6 +180,7 @@ with Flow("fetch-water-data", schedule) as flow:
     dates, new_day_data = split_days(level_data)
     existing_day_data = load_day_data.map(dates)
     day_data = merge_datasets.map(dates, existing_day_data, new_day_data)
+    verify_schema.map(day_data)
     store_day_data.map(dates, day_data)
 
 if __name__ == '__main__':
