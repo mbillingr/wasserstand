@@ -12,6 +12,10 @@ class TimeSeriesPredictor:
         self.meta_info = {}
 
     @abstractmethod
+    def initialize(self, n_series: int):
+        return self
+
+    @abstractmethod
     def fit_raw(self, raw_epochs):
         return self
 
@@ -27,10 +31,9 @@ class TimeSeriesPredictor:
     def fit(self, epochs):
         model = self.fit_raw(epochs.data)
         model.meta_info["stations"] = epochs.station.to_dict()["data"]
-        model.meta_info["fitted"] = {
-            "time_min": epochs.time.min().to_dict()["data"],
-            "time_max": epochs.time.max().to_dict()["data"],
-        }
+        f = model.meta_info.setdefault("fitted", {})
+        f["time_min"] = epochs.time.min().to_dict()["data"]
+        f["time_max"] = epochs.time.max().to_dict()["data"]
         return model
 
     def predict(self, n, time_series):
