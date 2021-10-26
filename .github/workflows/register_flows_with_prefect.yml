@@ -19,8 +19,5 @@ jobs:
       - name: Log in to prefect
         run: prefect auth login --key ${{ secrets.PREFECT_CLOUD_KEY }}
 
-      - name: "Register flow: update_data_cloud"
-        run: PYTHONPATH=. prefect register -p flows/update_data_cloud.py --project Wasserstand
-
-      - name: "Register flow: training_cloud"
-        run: PYTHONPATH=. prefect register -p flows/training_cloud.py --project Wasserstand
+      - name: "Register all cloud flows"
+        run: for X in flows/*_cloud.py; do PYTHONPATH=. prefect register -p $X --project Wasserstand; done
