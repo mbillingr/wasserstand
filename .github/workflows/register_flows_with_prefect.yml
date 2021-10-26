@@ -21,3 +21,6 @@ jobs:
 
       - name: "Register flow: update_data_cloud"
         run: PYTHONPATH=. prefect register -p flows/update_data_cloud.py --project Wasserstand
+
+      - name: "Register flow: training_cloud"
+        run: PYTHONPATH=. prefect register -p flows/training_cloud.py --project Wasserstand
