@@ -25,12 +25,13 @@ class TimeSeriesPredictor:
         raise NotImplementedError()
 
     def fit(self, epochs):
-        self.meta_info["stations"] = epochs.station.to_dict()["data"]
-        self.meta_info["fitted"] = {
+        model = self.fit_raw(epochs.data)
+        model.meta_info["stations"] = epochs.station.to_dict()["data"]
+        model.meta_info["fitted"] = {
             "time_min": epochs.time.min().to_dict()["data"],
             "time_max": epochs.time.max().to_dict()["data"],
         }
-        return self.fit_raw(epochs.data)
+        return model
 
     def predict(self, n, time_series):
         time_delta = time_series.time[1] - time_series.time[0]
