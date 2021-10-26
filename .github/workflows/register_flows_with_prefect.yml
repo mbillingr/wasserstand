@@ -1,0 +1,23 @@
+name: Register flows with prefect
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  register-flows:
+    name: Register flows with prefect
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Prepare Environment
+        run: pip3 install .
+
+      - name: Log in to prefect
+        run: prefect auth login --key ${{ secrets.PREFECT_CLOUD_KEY }}
+
+      - name: "Register flow: update_data_cloud"
+        run: PYTHONPATH=. prefect register -p flows/update_data_cloud.py --project Wasserstand
