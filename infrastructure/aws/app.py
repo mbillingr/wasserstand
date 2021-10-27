@@ -106,7 +106,7 @@ class DatascienceStack(core.Stack):
                 version=rds.MysqlEngineVersion.VER_8_0_25
             ),
             instance_type=ec2.InstanceType.of(
-                ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL
+                ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.MICRO
             ),
             vpc=vpc,
             security_groups=[sg_rds],
