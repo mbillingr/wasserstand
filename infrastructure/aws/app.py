@@ -49,7 +49,7 @@ class DatascienceStack(core.Stack):
             name="Public", subnet_type=ec2.SubnetType.PUBLIC, cidr_mask=28
         )
         private_subnet = ec2.SubnetConfiguration(
-            name="Private", subnet_type=ec2.SubnetType.PRIVATE, cidr_mask=28
+            name="Private", subnet_type=ec2.SubnetType.ISOLATED, cidr_mask=28
         )
         isolated_subnet = ec2.SubnetConfiguration(
             name="DB", subnet_type=ec2.SubnetType.ISOLATED, cidr_mask=28
@@ -59,8 +59,7 @@ class DatascienceStack(core.Stack):
             id="VPC",
             cidr="10.0.0.0/24",
             max_azs=2,
-            nat_gateway_provider=ec2.NatProvider.gateway(),
-            nat_gateways=1,
+            nat_gateways=0,
             subnet_configuration=[public_subnet, private_subnet, isolated_subnet],
         )
         vpc.add_gateway_endpoint(
@@ -142,6 +141,8 @@ class DatascienceStack(core.Stack):
             "PrefectAgentService",
             task_definition=agent_task_definition,
             cluster=cluster,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            assign_public_ip=True,
         )
 
         mlflow_task_definition = ecs.FargateTaskDefinition(
@@ -175,6 +176,7 @@ class DatascienceStack(core.Stack):
             service_name="MlflowService",
             cluster=cluster,
             task_definition=mlflow_task_definition,
+            assign_public_ip=True,
         )
 
         mlflow_service.service.connections.security_groups[0].add_ingress_rule(
