@@ -1,3 +1,4 @@
+from dask.distributed import Client
 from prefect import Flow, task, unmapped
 import matplotlib.pyplot as plt
 import mlflow
@@ -10,7 +11,7 @@ from wasserstand.config import MODEL_ROOT
 
 @task
 def visualize(model, time_series, n_predict=50, station="Innsbruck"):
-    pred = model.predict(n_predict, time_series).compute()
+    pred = model.evaluate(n_predict, time_series).compute()
 
     # predictions for which we have an error estimate
     pred_err = pred[: len(model.err_low)]
@@ -44,7 +45,7 @@ with Flow("training") as flow:
     train, test = dataset.split_data(ts)
     predictor = model.train_model(train)
     predictor = model.quantify_model(predictor, test)
-    model.store_model(predictor, MODEL_ROOT + "/latest.pickle")
+    model.store_model(predictor, "../artifacts/model.pickle")
     model.evaluate.map(
         unmapped(predictor), unmapped(test), station=[None, "Zirl", "Innsbruck"]
     )
@@ -52,4 +53,8 @@ with Flow("training") as flow:
 
 
 if __name__ == "__main__":
+    dask_client = Client()
+    print(dask_client)
+    print(dask_client.dashboard_link)
+
     flow.run()
