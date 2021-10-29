@@ -10,34 +10,52 @@ class UnivariatePredictor(TimeSeriesPredictor):
         self.order = order
         self.coef_ = None
         self.mean_ = None
+        self.mean_boost = 100  # how much faster to learn the mean
 
     @property
     def min_samples(self):
         return self.order
 
+    def grow(self, new_order):
+        assert new_order >= self.order
+        p = new_order - self.order
+        m = self.coef_.shape[0]
+        self.coef_ = da.concatenate([da.zeros((m, p)), self.coef_], axis=1)
+        self.order = new_order
+
     def initialize_raw(self, m: int):
         self.coef_ = da.zeros((m, self.order))
-        self.coef_[:, -1] = 1
+        # self.coef_[:, -1] = 1
         self.mean_ = da.zeros(m)
         return self
 
     def fit_raw_incremental(self, raw_time_series, learning_rate):
-        n, m = raw_time_series.shape
+        x, y = self._extract_xy(raw_time_series)
+        m, n, p = x.shape
 
-        gradient_mean = n * self.mean_ - raw_time_series.sum(axis=0)
-        mean = self.mean_ - gradient_mean * learning_rate
+        # update mean independently of model coefficients seems to lead to a more stable fit
+        gradient_mean = self.mean_ - raw_time_series.mean(axis=0)
+        mean = self.mean_ - gradient_mean * learning_rate * self.mean_boost
 
-        xx, xy, x, y = self._compute_covariances(raw_time_series - self.mean_)
+        x_ = x - self.mean_[:, None, None]
+        y_hat = x_ @ self.coef_[:, :, None] + mean[:, None, None]
+        residuals = y_hat - y
 
-        gradient = xx @ self.coef_[:, :, None] - xy
-        coef = self.coef_ - gradient[:, :, 0] * learning_rate
+        gradient_coef = 2 * (residuals.transpose(0, 2, 1) @ x)[:, 0, :] / n
+        coef = self.coef_ - gradient_coef * learning_rate
 
-        self.mean_ = mean
-        self.coef_ = coef
+        def err(m, c):
+            y_hat = x_ @ c[:, :, None] + m[:, None, None]
+            return ((y_hat - y) ** 2).sum().compute()
+
+        print(err(self.mean_, self.coef_), " -> ", err(mean, coef))
+
+        self.mean_ = mean.persist()
+        self.coef_ = coef.persist()
         return self
 
     def fit_raw(self, raw_epochs):
-        mean = raw_epochs.mean(axis=(0, 1)).persist()
+        mean = raw_epochs.mean(axis=0).persist()
         xx, xy, x, y = self._compute_covariances(raw_epochs - mean)
 
         # regularize a little bit
@@ -45,9 +63,8 @@ class UnivariatePredictor(TimeSeriesPredictor):
 
         coefs = da.stack([da.linalg.solve(xx, xy).ravel() for xx, xy in zip(xx, xy)])
 
-        self.coef_ = coefs.compute()
-        self.mean_ = mean.compute()
-
+        self.coef_ = coefs.persist()
+        self.mean_ = mean.persist()
         return self
 
     def _compute_covariances(self, raw_time_series):

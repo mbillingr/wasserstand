@@ -68,22 +68,19 @@ class TimeSeriesPredictor:
     def forecast(self, n, time_series):
         time_delta = time_series.time[1] - time_series.time[0]
         t_start = time_series.time[-self.min_samples]
-        time = t_start.values + da.arange(n+self.min_samples) * time_delta.values
+        time = t_start.values + da.arange(n + self.min_samples) * time_delta.values
 
         predictions = xr.DataArray(
             da.empty((len(time), len(time_series.station))),
             dims=["time", "station"],
-            coords={
-                "station": time_series.station,
-                "time": time
-            },
+            coords={"station": time_series.station, "time": time},
         )
 
         # fill predictions with starting data
-        predictions[:self.min_samples] = time_series[-self.min_samples:]
+        predictions[: self.min_samples] = time_series[-self.min_samples :]
 
         for i in range(self.min_samples, len(time)):
-            predictions.data[i, :] = self.predict_next(time_series.data[:i])
+            predictions.data[i, :] = self.predict_next(predictions.data[:i])
 
         return predictions[-n:, :]
 

@@ -23,37 +23,47 @@ def load_data(datestr: str):
 def evaluate(predictor, time_series):
     prediction = predictor.evaluate(time_series)
 
-    station_mse = ((time_series - prediction)**2).mean('time')
+    station_mse = ((time_series - prediction) ** 2).mean("time")
     total_mse = station_mse.mean()
 
+    i = list(time_series.station).index("Innsbruck")
+    print("µ =", predictor.mean_[i].compute(), ", p =", predictor.coef_[i].compute())
+
     fig = plt.figure()
-    plt.plot(time_series.time, time_series.sel(station='Innsbruck'))
-    plt.plot(prediction.time, prediction.sel(station='Innsbruck'))
-    plt.title(f'MSE(station) = {float(station_mse.sel(station="Innsbruck"))}, MSE(total) = {float(total_mse)}')
+    plt.plot(time_series.time, time_series.sel(station="Innsbruck"))
+    plt.plot(prediction.time, prediction.sel(station="Innsbruck"))
+    plt.title(
+        f'MSE(station) = {float(station_mse.sel(station="Innsbruck"))}, MSE(total) = {float(total_mse)}'
+    )
 
     return fig
 
 
 @task
 def forecast(predictor, time_series):
-    init_data = time_series[:predictor.min_samples]
+    init_data = time_series[: predictor.min_samples]
     n_predict = time_series.shape[0] - predictor.min_samples
     prediction = predictor.forecast(n_predict, init_data)
 
-    station_mse = ((time_series - prediction) ** 2).mean('time')
+    station_mse = ((time_series - prediction) ** 2).mean("time")
     total_mse = station_mse.mean()
 
     fig = plt.figure()
-    plt.plot(time_series.time, time_series.sel(station='Innsbruck'))
-    plt.plot(prediction.time, prediction.sel(station='Innsbruck'))
-    plt.title(f'MSE(station) = {float(station_mse.sel(station="Innsbruck"))}, MSE(total) = {float(total_mse)}')
+    plt.plot(time_series.time, time_series.sel(station="Innsbruck"))
+    plt.plot(prediction.time, prediction.sel(station="Innsbruck"))
+    plt.title(
+        f'MSE(station) = {float(station_mse.sel(station="Innsbruck"))}, MSE(total) = {float(total_mse)}'
+    )
 
     return fig
 
 
 @task
 def learn(predictor, time_series, learning_rate):
-    predictor.fit_incremental(time_series, learning_rate)
+    for _ in range(10):
+        predictor.fit_incremental(time_series, learning_rate)
+    # predictor.fit(time_series)
+    # predictor.grow(8)
     return predictor
 
 
@@ -65,21 +75,18 @@ def show_figures(figures):
 with Flow("training") as flow:
     model_path = Parameter("model-path", "../artifacts/model.pickle")
     date = Parameter("date", required=False)
-    learning_rate = Parameter("learning-rate", 1e-3)
+    learning_rate = Parameter("learning-rate", 1e-6)
 
     time_series = load_data(date)
 
     predictor = model.load_model(model_path)
 
-    predictor = learn(predictor, time_series, learning_rate)  #, upstream_tasks=[show])
-
     fig1 = evaluate(predictor, time_series)
     fig2 = forecast(predictor, time_series)
     show = show_figures([fig1, fig2])
 
-
-
-    #model.store_model(predictor, model_path)
+    predictor = learn(predictor, time_series, learning_rate, upstream_tasks=[show])
+    model.store_model(predictor, model_path)
 
 
 if __name__ == "__main__":
