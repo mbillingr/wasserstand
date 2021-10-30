@@ -111,6 +111,14 @@ def show_figures(figures):
     plt.show()
 
 
+@task
+def update_parameters(datestr=None):
+    parameters = prefect.context.get("parameters").copy()
+    if datestr is not None:
+        parameters["date"] = datestr
+    return parameters
+
+
 with Flow(FLOW_NAME) as flow:
     date_param = Parameter("date", required=False)
     date = parse_date(defaults_to(date_param, "yesterday"))
@@ -127,7 +135,7 @@ with Flow(FLOW_NAME) as flow:
         model_id = Parameter(
             "model-constructor", "wasserstand.models.univariate.UnivariatePredictor"
         )
-        model_config = Parameter("model-config", '{"order": 2}')
+        model_config = Parameter("model-config", {"order": 2})
         initial_predictor = model.new_model(model_id, kwargs=model_config)
 
     with case(is_first_day, False):
@@ -135,8 +143,10 @@ with Flow(FLOW_NAME) as flow:
 
         with case(old_predictor, None):
             previous_day = StartFlowRun(
-                flow_name=FLOW_NAME, project_name=PROJECT_NAME, wait=True
-            )
+                flow_name=FLOW_NAME,
+                project_name=PROJECT_NAME,
+                wait=True,
+            )(parameters=update_parameters(datestr=format_date(date - ONE_DAY)))
             old_predictor2 = load_model(date - ONE_DAY, upstream_tasks=[previous_day])
 
         old_predictor = merge(old_predictor2, old_predictor)

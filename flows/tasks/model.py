@@ -1,5 +1,4 @@
 from importlib import import_module
-import json
 
 import mlflow
 import prefect
@@ -18,7 +17,7 @@ def new_model(model_identifier: str, args=(), kwargs={}) -> TimeSeriesPredictor:
     model_module, model_name = model_identifier.rsplit(".", 1)
     module = import_module(model_module)
     model_class = getattr(module, model_name)
-    model_instance = model_class(*args, **json.loads(kwargs))
+    model_instance = model_class(*args, **kwargs)
 
     data = wds.load_data(config.DATAFILE_LATEST)
     stations = wds.get_stations(data)
