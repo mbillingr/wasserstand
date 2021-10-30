@@ -232,7 +232,7 @@ continuation_flow = StartFlowRun(flow_name=FLOW_NAME, project_name=PROJECT_NAME)
 
 
 with Flow(FLOW_NAME, executor=LocalDaskExecutor()) as flow:
-    start_date = Parameter("start-date", "2020-10-11")
+    start_date = Parameter("start-date", "2021-10-11")
     start_date = parse_date(start_date)
 
     end_date = Parameter("end-date", required=False)
