@@ -3,6 +3,7 @@ import os
 
 import prefect
 from prefect import Flow, Parameter, task, case
+from prefect.engine.signals import LOOP
 from prefect.run_configs import ECSRun
 from prefect.storage import GitHub
 from prefect.tasks.control_flow import merge
@@ -145,6 +146,20 @@ def display(obj):
 
 
 @task
+def display_sequence(seq):
+    loop_payload = prefect.context.get("task_loop_result", {})
+
+    seq = loop_payload.get("seq", seq)
+
+    if not seq:
+        return
+
+    print(seq[0])
+
+    raise LOOP(result=dict(seq=seq[1:]))
+
+
+@task
 def stringify(obj):
     return str(obj)
 
@@ -164,7 +179,7 @@ with Flow(FLOW_NAME) as flow:
 
     date_sequence = date_range(date, end_date)
 
-    display.map(stringify.map(date_sequence))
+    display_sequence(stringify.map(date_sequence))
 
 
 
