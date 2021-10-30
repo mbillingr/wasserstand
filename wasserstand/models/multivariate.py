@@ -41,5 +41,5 @@ class MultivariatePredictor(TimeSeriesPredictor):
 
     def predict_next(self, time_series):
         x = time_series[-self.order :].reshape(1, -1)
-        preds = self.model_.predict(x)
+        preds = self.model_.evaluate(x)
         return preds

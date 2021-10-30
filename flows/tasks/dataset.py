@@ -31,13 +31,13 @@ def slice_time_series(epoch_size, time_series):
     n_drop = n - epoch_size * (n // epoch_size)
     truncated = time_series[n_drop:]
 
-    data = truncated.data.reshape(-1, epoch_size, m)
+    data = truncated.time_series.reshape(-1, epoch_size, m)
 
     return xr.DataArray(
         data,
         dims=["epoch", "t", "station"],
         coords={
             "station": time_series.station,
-            "time": (["epoch", "t"], truncated.time.data.reshape(-1, epoch_size)),
+            "time": (["epoch", "t"], truncated.time.time_series.reshape(-1, epoch_size)),
         },
     )

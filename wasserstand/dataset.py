@@ -2,6 +2,8 @@ import dask.dataframe
 from dask import array as da
 import xarray as xr
 
+STATION_NAME_COLUMN = "Stationsname"
+
 
 def load_data(source):
     data = dask.dataframe.read_parquet(source)
@@ -12,12 +14,12 @@ def load_data(source):
 
 
 def build_time_series(dataframe, stations=None):
-    stations = stations or dataframe["Stationsname"].unique()
+    stations = stations or get_stations(dataframe)
 
     station_series = []
     times = None
     for s in stations:
-        sdf = dataframe[dataframe["Stationsname"] == s]
+        sdf = dataframe[dataframe[STATION_NAME_COLUMN] == s]
 
         t = sdf["timestamp_utc"].values
         series = sdf["Wert"].values
@@ -42,3 +44,7 @@ def build_time_series(dataframe, stations=None):
     )
 
     return time_series
+
+
+def get_stations(dataframe):
+    return dataframe[STATION_NAME_COLUMN].unique()

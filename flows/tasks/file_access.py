@@ -5,7 +5,6 @@ from urllib.parse import urlparse
 @contextmanager
 def open_anywhere(uri, mode="r"):
     pr = urlparse(uri)
-    print(pr)
 
     if not pr.scheme:
         pass
