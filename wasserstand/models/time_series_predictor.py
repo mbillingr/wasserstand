@@ -15,7 +15,7 @@ class TimeSeriesPredictor:
     def __init__(self):
         self.err_low = None
         self.err_hi = None
-        self.err = 0
+        self.err = 500**2
         self.meta_info = {}
 
     @abstractmethod
