@@ -15,6 +15,7 @@ class TimeSeriesPredictor:
     def __init__(self):
         self.err_low = None
         self.err_hi = None
+        self.err = 0
         self.meta_info = {}
 
     @abstractmethod
@@ -110,11 +111,10 @@ class TimeSeriesPredictor:
         pred.data = self.predict_next(time_series.data)
         return pred
 
-    def estimate_prediction_error(self, n, test_epochs):
-        err = estimate_prediction_error(self, n, test_epochs)
-        s = da.std(err, axis=0)
-        self.err_low = -s
-        self.err_hi = s
+    def update_prediction_error(self, prediction, actual, learning_rate):
+        err = (prediction.data - actual.data)**2
+        err_gradient = 2 * (self.err - err)
+        self.err -= err_gradient * learning_rate
 
     def serialize(self, file_descriptor):
         pickle.dump(self, file_descriptor)

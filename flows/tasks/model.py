@@ -27,6 +27,12 @@ def new_model(model_identifier: str, args=(), kwargs={}) -> TimeSeriesPredictor:
 
 
 @task
+def fit_model(model, data) -> TimeSeriesPredictor:
+    model.fit(data)
+    return model
+
+
+@task
 def train_model(train, model_order=8) -> TimeSeriesPredictor:
     model = Predictor(order=model_order)
     mlflow.log_param("model_order", model_order)
