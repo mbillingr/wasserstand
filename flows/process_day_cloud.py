@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
+import os
 
 import prefect
 from prefect import Flow, Parameter, task, case
+from prefect.run_configs import ECSRun
+from prefect.storage import GitHub
 from prefect.tasks.control_flow import merge
 from prefect.tasks.prefect import StartFlowRun
 import matplotlib.pyplot as plt
@@ -124,6 +127,22 @@ with Flow(FLOW_NAME) as flow:
     # model.store_model(predictor, model_path)
     #
     # ######################
+
+
+flow.storage = GitHub(
+    repo="mbillingr/wasserstand",
+    path="flows/process_day_cloud.py",
+)
+
+flow.run_config = ECSRun(
+    labels=["wasserstand"],
+    image="kazemakase/wasserstand:latest",
+    env={
+        "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
+        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
+        "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+    },
+)
 
 
 if __name__ == "__main__":
