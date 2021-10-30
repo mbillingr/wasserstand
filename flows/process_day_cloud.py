@@ -9,8 +9,10 @@ from prefect.tasks.control_flow import merge
 from prefect.tasks.prefect import StartFlowRun
 import matplotlib.pyplot as plt
 
+from flows.tasks.file_access import open_anywhere
 from flows.tasks import model
 from wasserstand.config import DATAFILE_TEMPLATE
+from wasserstand.models.time_series_predictor import TimeSeriesPredictor
 import wasserstand.dataset as wds
 
 FLOW_NAME = "process-day"
@@ -19,22 +21,38 @@ ONE_DAY = timedelta(days=1)
 
 
 @task
-def parse_date(datestr: str) -> datetime:
-    datestr = datestr or prefect.context.get("yesterday")
-    date = datetime.strptime(datestr, "%Y-%m-%d")
+def defaults_to(datestr: str, default_key: str) -> str:
+    return datestr or prefect.context.get(default_key)
+
+
+@task
+def less_or_equal(a, b):
+    return a <= b
+
+
+@task
+def parse_date(datestr: str, template="%Y-%m-%d") -> datetime:
+    date = datetime.strptime(datestr, template)
+    print(date)
     return date
 
 
 @task
-def load_model(date: datetime):
-    print(date)
+def format_date(date: datetime, template="%Y-%m-%d") -> str:
+    return date.strftime(template)
 
 
 @task
-def load_data(datestr: str):
-    datestr = datestr or prefect.context.get("yesterday")
-    date = datetime.strptime(datestr, "%Y-%m-%d")
+def load_model(path: str):
+    try:
+        with open_anywhere(path, "rb") as fd:
+            return TimeSeriesPredictor.deserialize(fd)
+    except FileNotFoundError:
+        return None
 
+
+@task
+def load_data(date: datetime):
     data = wds.load_data(date.strftime(DATAFILE_TEMPLATE))
     time_series = wds.build_time_series(data)
     return time_series
@@ -80,7 +98,7 @@ def forecast(predictor, time_series):
 
 
 @task
-def learn(predictor, time_series, learning_rate):
+def learn(predictor, time_series, learning_rate=1e-6):
     for _ in range(10):
         predictor.fit_incremental(time_series, learning_rate)
     # predictor.fit(time_series)
@@ -94,20 +112,41 @@ def show_figures(figures):
 
 
 with Flow(FLOW_NAME) as flow:
-
     date_param = Parameter("date", required=False)
+    date = parse_date(defaults_to(date_param, "yesterday"))
 
-    date = parse_date(date_param)
+    first_date_param = Parameter("first-date", required=False, default="2021-10-27")
+    first_date = parse_date(first_date_param)
+    is_first_day = less_or_equal(date, first_date)
 
-    old_predictor = load_model(date - ONE_DAY)
+    model_path_template = Parameter(
+        "model-path", "s3://kazemakase-data/models/model_%Y-%m-%d.pickle"
+    )
 
-    with case(old_predictor, None):
-        previous_day = StartFlowRun(
-            flow_name=FLOW_NAME, project_name=PROJECT_NAME, wait=True
+    with case(is_first_day, True):
+        model_id = Parameter(
+            "model-constructor", "wasserstand.models.univariate.UnivariatePredictor"
         )
-        old_predictor2 = load_model(date - ONE_DAY, upstream_tasks=[previous_day])
+        model_config = Parameter("model-config", '{"order": 2}')
+        initial_predictor = model.new_model(model_id, kwargs=model_config)
 
-    old_predictor = merge(old_predictor2, old_predictor)
+    with case(is_first_day, False):
+        old_predictor = load_model(format_date(date - ONE_DAY, model_path_template))
+
+        with case(old_predictor, None):
+            previous_day = StartFlowRun(
+                flow_name=FLOW_NAME, project_name=PROJECT_NAME, wait=True
+            )
+            old_predictor2 = load_model(date - ONE_DAY, upstream_tasks=[previous_day])
+
+        old_predictor = merge(old_predictor2, old_predictor)
+
+        time_series = load_data(date)
+        new_predictor = learn(old_predictor, time_series)
+
+    predictor = merge(initial_predictor, new_predictor)
+
+    model.store_model(predictor, format_date(date, model_path_template))
 
     # ######################
     #
