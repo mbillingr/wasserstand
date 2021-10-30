@@ -1,12 +1,30 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import prefect
-from prefect import Flow, Parameter, task
+from prefect import Flow, Parameter, task, case
+from prefect.tasks.control_flow import merge
+from prefect.tasks.prefect import StartFlowRun
 import matplotlib.pyplot as plt
 
 from flows.tasks import model
 from wasserstand.config import DATAFILE_TEMPLATE
 import wasserstand.dataset as wds
+
+FLOW_NAME = "process-day"
+PROJECT_NAME = "Wasserstand"
+ONE_DAY = timedelta(days=1)
+
+
+@task
+def parse_date(datestr: str) -> datetime:
+    datestr = datestr or prefect.context.get("yesterday")
+    date = datetime.strptime(datestr, "%Y-%m-%d")
+    return date
+
+
+@task
+def load_model(date: datetime):
+    print(date)
 
 
 @task
@@ -72,21 +90,40 @@ def show_figures(figures):
     plt.show()
 
 
-with Flow("training") as flow:
-    model_path = Parameter("model-path", "../artifacts/model.pickle")
-    date = Parameter("date", required=False)
-    learning_rate = Parameter("learning-rate", 1e-6)
+with Flow(FLOW_NAME) as flow:
 
-    time_series = load_data(date)
+    date_param = Parameter("date", required=False)
 
-    predictor = model.load_model(model_path)
+    date = parse_date(date_param)
 
-    fig1 = evaluate(predictor, time_series)
-    fig2 = forecast(predictor, time_series)
-    show = show_figures([fig1, fig2])
+    old_predictor = load_model(date - ONE_DAY)
 
-    predictor = learn(predictor, time_series, learning_rate, upstream_tasks=[show])
-    model.store_model(predictor, model_path)
+    with case(old_predictor, None):
+        previous_day = StartFlowRun(
+            flow_name=FLOW_NAME, project_name=PROJECT_NAME, wait=True
+        )
+        old_predictor2 = load_model(date - ONE_DAY, upstream_tasks=[previous_day])
+
+    old_predictor = merge(old_predictor2, old_predictor)
+
+    # ######################
+    #
+    # model_path = Parameter("model-path", "../artifacts/model.pickle")
+    # date = Parameter("date", required=False)
+    # learning_rate = Parameter("learning-rate", 1e-6)
+    #
+    # time_series = load_data(date)
+    #
+    # predictor = model.load_model(model_path)
+    #
+    # fig1 = evaluate(predictor, time_series)
+    # fig2 = forecast(predictor, time_series)
+    # show = show_figures([fig1, fig2])
+    #
+    # predictor = learn(predictor, time_series, learning_rate, upstream_tasks=[show])
+    # model.store_model(predictor, model_path)
+    #
+    # ######################
 
 
 if __name__ == "__main__":
