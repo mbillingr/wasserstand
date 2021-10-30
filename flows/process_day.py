@@ -167,22 +167,6 @@ with Flow(FLOW_NAME) as flow:
     display.map(stringify.map(date_sequence))
 
 
-flow.storage = GitHub(
-    repo="mbillingr/wasserstand",
-    path="flows/process_day_cloud.py",
-)
-
-flow.run_config = ECSRun(
-    labels=["wasserstand"],
-    image="kazemakase/wasserstand:latest",
-    env={
-        "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
-        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
-        "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY"),
-    },
-)
-
 
 if __name__ == "__main__":
     flow.run(parameters={"start-date": "2021-10-20"})
-
