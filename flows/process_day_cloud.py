@@ -289,10 +289,10 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor()) as flow:
         model2 = update_forecast_error(model, old_prediction, time_series)
     model = merge(model2, model)
 
-    stored = model_tasks.store_model(model, format_date(date, model_path_template))
+    model_stored = model_tasks.store_model(model, format_date(date, model_path_template))
 
     new_prediction = forecast(model, time_series)
-    save_forecast(new_prediction, format_date(date + ONE_DAY, forecast_path_template))
+    forecast_stored = save_forecast(new_prediction, format_date(date + ONE_DAY, forecast_path_template))
     prediction_plot = plot_forecast(model, new_prediction)
     save_figure(
         prediction_plot, format_date(date + ONE_DAY, forecast_img_path_template)
@@ -301,7 +301,7 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor()) as flow:
     with case(equals(date, end_date), False):
         continuation_flow(
             parameters=configure_continuation_flow(format_date(date + ONE_DAY)),
-            upstream_tasks=[stored],
+            upstream_tasks=[model_stored, forecast_stored],
         )
 
 
