@@ -11,7 +11,7 @@ from wasserstand.config import MODEL_ROOT
 
 @task
 def predict(model, time_series, n_predict=50):
-    pred = model.evaluate(n_predict, time_series).compute()
+    pred = model.predict_series(n_predict, time_series).compute()
 
     n_confidence = len(model.err_low)
     tmp = xr.zeros_like(pred[:n_confidence])

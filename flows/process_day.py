@@ -13,7 +13,7 @@ import numpy as np
 from flows.tasks.file_access import open_anywhere
 from flows.tasks import model as model_tasks
 from wasserstand.config import DATAFILE_TEMPLATE
-from wasserstand.models.time_series_predictor import TimeSeriesPredictor
+from wasserstand.models.high_level_predictor import HighLevelPredictor
 import wasserstand.dataset as wds
 
 FLOW_NAME = "process-day"
@@ -46,7 +46,7 @@ def format_date(date: datetime, template="%Y-%m-%d") -> str:
 def load_model(path: str):
     try:
         with open_anywhere(path, "rb") as fd:
-            return TimeSeriesPredictor.deserialize(fd)
+            return HighLevelPredictor.deserialize(fd)
     except FileNotFoundError:
         return None
 
@@ -60,7 +60,7 @@ def load_data(date: datetime):
 
 @task
 def evaluate_model(predictor, time_series):
-    prediction = predictor.evaluate(time_series)
+    prediction = predictor.predict_series(time_series)
 
     station_mse = ((time_series - prediction) ** 2).mean("time")
     total_mse = station_mse.mean()
@@ -78,9 +78,8 @@ def evaluate_model(predictor, time_series):
 
 @task
 def forecast(predictor, time_series):
-    init_data = time_series[-predictor.min_samples :]
     n_predict = time_series.shape[0]
-    prediction = predictor.forecast(n_predict, init_data).persist()
+    prediction = predictor.forecast(n_predict, time_series).persist()
     return prediction
 
 
@@ -124,7 +123,7 @@ def learn(predictor, time_series):
 @task
 def update_forecast_error(predictor, prediction, time_series):
     predictor = deepcopy(predictor)
-    predictor.update_prediction_error(prediction, time_series, 1e-3)
+    predictor.update_prediction_error(prediction, time_series)
     return predictor
 
 
@@ -144,7 +143,8 @@ def save_forecast(prediction, path):
 def load_forecast(path):
     try:
         with open_anywhere(path, "rb") as fd:
-            return pickle.load(fd)
+            data = pickle.load(fd)
+            return data
     except FileNotFoundError:
         return None
 
@@ -171,7 +171,8 @@ def configure_continuation_flow(datestr):
 continuation_flow = StartFlowRun(flow_name=FLOW_NAME, project_name=PROJECT_NAME)
 
 
-with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler="processes")) as flow:
+#with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler="processes")) as flow:
+with Flow(FLOW_NAME) as flow:
     start_date = Parameter("start-date", "2021-10-11")
     start_date = parse_date(start_date)
 
@@ -212,10 +213,12 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler="processes")) as flow:
 
     with case(model, None):
         new_model_id = Parameter(
-            "model-constructor", "wasserstand.models.univariate.UnivariatePredictor"
+            #"model-constructor", "wasserstand.models.univariate.UnivariatePredictor"
+            "model-constructor", "wasserstand.models.mean.MeanPredictor"
         )
         new_model_config = Parameter(
-            "model-config", {"order": 2, "learning_rate": 1e-6}
+            #"model-config", {"order": 2, "learning_rate": 1e-6}
+            "model-config", {"learning_rate": 1e-2}
         )
         new_model = model_tasks.new_model(new_model_id, kwargs=new_model_config)
         new_model = model_tasks.fit_model(new_model, time_series)
@@ -248,5 +251,5 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler="processes")) as flow:
 
 
 if __name__ == "__main__":
-    flow.visualize()
+    #flow.visualize()
     flow.run()

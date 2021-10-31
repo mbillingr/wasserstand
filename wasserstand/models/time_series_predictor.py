@@ -24,5 +24,5 @@ class TimeSeriesPredictor:
         pass
 
     @abstractmethod
-    def evaluate(self, time_series):
+    def predict_series(self, time_series):
         pass

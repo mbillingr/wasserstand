@@ -11,7 +11,7 @@ from wasserstand.config import MODEL_ROOT
 
 @task
 def visualize(model, time_series, n_predict=50, station="Innsbruck"):
-    pred = model.evaluate(n_predict, time_series).compute()
+    pred = model.predict_series(n_predict, time_series).compute()
 
     # predictions for which we have an error estimate
     pred_err = pred[: len(model.err_low)]

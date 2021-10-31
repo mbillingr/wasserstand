@@ -85,11 +85,7 @@ class UnivariatePredictor(TimeSeriesPredictor):
         x = time_series[-self.order :] - self.mean_
         return (x * self.coef_.T).sum(axis=0, keepdims=True) + self.mean_
 
-    def evaluate(self, raw_time_series):
-        n, m = raw_time_series.shape
-        x, y = self._extract_xy(raw_time_series - self.mean_)
-        y = y.T[0]
-
+    def predict_series(self, time_series):
+        x, y = self._extract_xy(time_series - self.mean_)
         y_hat = (x @ self.coef_[:, :, None]).T[0] + self.mean_
-
-        return y_hat, y
+        return y_hat
