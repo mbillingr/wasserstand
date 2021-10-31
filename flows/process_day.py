@@ -1,20 +1,14 @@
 from datetime import datetime, timedelta
-import os
 import pickle
 from copy import deepcopy
 
-import dask as da
 import prefect
 from prefect import Flow, Parameter, task, case
-from prefect.engine.signals import LOOP
 from prefect.executors import LocalDaskExecutor
-from prefect.run_configs import ECSRun
-from prefect.storage import GitHub
 from prefect.tasks.control_flow import merge
 from prefect.tasks.prefect import StartFlowRun
 from matplotlib.figure import Figure
 import numpy as np
-import xarray as xr
 
 from flows.tasks.file_access import open_anywhere
 from flows.tasks import model as model_tasks
@@ -30,16 +24,6 @@ ONE_DAY = timedelta(days=1)
 @task
 def defaults_to(datestr: str, default_key: str) -> str:
     return datestr or prefect.context.get(default_key)
-
-
-@task
-def less_or_equal(a, b):
-    return a <= b
-
-
-@task
-def equals(a, b):
-    return a == b
 
 
 @task
@@ -149,7 +133,7 @@ def update_forecast_error(predictor, prediction, time_series):
 
 @task
 def save_figure(fig, path):
-    with open_anywhere(path, 'wb') as fd:
+    with open_anywhere(path, "wb") as fd:
         fig.savefig(fd)
 
 
@@ -168,14 +152,6 @@ def load_forecast(path):
         return None
 
 
-@task
-def update_parameters(datestr=None):
-    parameters = prefect.context.get("parameters").copy()
-    if datestr is not None:
-        parameters["date"] = datestr
-    return parameters
-
-
 @task(nout=2)
 def find_newest_model(start_date: datetime, end_date: datetime, path_template: str):
     date = end_date
@@ -185,40 +161,6 @@ def find_newest_model(start_date: datetime, end_date: datetime, path_template: s
             return model, date
         date -= ONE_DAY
     return None, date
-
-
-@task
-def date_range(first: datetime, last: datetime, step=ONE_DAY):
-    date = first
-    sequence = []
-    while date <= last:
-        sequence.append(date)
-        date += step
-    return sequence
-
-
-@task
-def display(obj):
-    print(obj)
-
-
-@task
-def display_sequence(seq):
-    loop_payload = prefect.context.get("task_loop_result", {})
-
-    seq = loop_payload.get("seq", seq)
-
-    if not seq:
-        return
-
-    print(seq[0])
-
-    raise LOOP(result=dict(seq=seq[1:]))
-
-
-@task
-def stringify(obj):
-    return str(obj)
 
 
 @task
@@ -232,7 +174,7 @@ def configure_continuation_flow(datestr):
 continuation_flow = StartFlowRun(flow_name=FLOW_NAME, project_name=PROJECT_NAME)
 
 
-with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler='processes')) as flow:
+with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler="processes")) as flow:
     start_date = Parameter("start-date", "2021-10-11")
     start_date = parse_date(start_date)
 
@@ -241,21 +183,26 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler='processes')) as flow:
 
     current_date = Parameter("date", required=False)
 
-    model_path_template = Parameter("model-path", "../artifacts/model_%Y-%m-%d.pickle")
-    performance_path_template = Parameter(
-        "perf-path", "../artifacts/performance_%Y-%m-%d.png"
-    )
-    forecast_path_template = Parameter(
-        "forecast-data-path", "../artifacts/forecast_%Y-%m-%d.pickle"
-    )
-    forecast_img_path_template = Parameter(
-        "forecast-image-path", "../artifacts/forecast_%Y-%m-%d.png"
-    )
+    artifact_path = Parameter("artifact-path", "../artifacts/")
 
-    with case(equals(current_date, None), True):
+    model_path_template = Parameter("model-path", "model_%Y-%m-%d.pickle")
+    model_path_template = artifact_path + model_path_template
+
+    performance_path_template = Parameter("perf-path", "performance_%Y-%m-%d.png")
+    performance_path_template = artifact_path + performance_path_template
+
+    forecast_path_template = Parameter("forecast-data-path", "forecast_%Y-%m-%d.pickle")
+    forecast_path_template = artifact_path + forecast_path_template
+
+    forecast_img_path_template = Parameter(
+        "forecast-image-path", "forecast_%Y-%m-%d.png"
+    )
+    forecast_img_path_template = artifact_path + forecast_img_path_template
+
+    with case(is_none(current_date), True):
         model1, date = find_newest_model(start_date, end_date, model_path_template)
 
-    with case(equals(current_date, None), False):
+    with case(is_none(current_date), False):
         current_date = parse_date(current_date)
         model2 = model_tasks.load_model(
             format_date(current_date - ONE_DAY, model_path_template)
@@ -287,10 +234,14 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler='processes')) as flow:
         model2 = update_forecast_error(model, old_prediction, time_series)
     model = merge(model2, model)
 
-    stored = model_tasks.store_model(model, format_date(date, model_path_template), upstream_tasks=[model])
+    model_stored = model_tasks.store_model(
+        model, format_date(date, model_path_template), upstream_tasks=[model]
+    )
 
     new_prediction = forecast(model, time_series)
-    save_forecast(new_prediction, format_date(date + ONE_DAY, forecast_path_template))
+    forecast_stored = save_forecast(
+        new_prediction, format_date(date + ONE_DAY, forecast_path_template)
+    )
     prediction_plot = plot_forecast(model, new_prediction)
     save_figure(
         prediction_plot, format_date(date + ONE_DAY, forecast_img_path_template)
@@ -298,4 +249,5 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler='processes')) as flow:
 
 
 if __name__ == "__main__":
+    flow.visualize()
     flow.run()
