@@ -8,32 +8,34 @@ from prefect import task
 from flows.tasks.file_access import open_anywhere
 from wasserstand import config
 from wasserstand.models.univariate import UnivariatePredictor as Predictor
-from wasserstand.models.time_series_predictor import fix_epoch_dims, TimeSeriesPredictor
+from wasserstand.models.high_level_predictor import HighLevelPredictor
 import wasserstand.dataset as wds
 
 
 @task
-def new_model(model_identifier: str, args=(), kwargs={}) -> TimeSeriesPredictor:
+def new_model(model_identifier: str, args=(), kwargs={}) -> HighLevelPredictor:
     model_module, model_name = model_identifier.rsplit(".", 1)
     module = import_module(model_module)
     model_class = getattr(module, model_name)
     model_instance = model_class(*args, **kwargs)
 
+    hlp = HighLevelPredictor(model_instance)
+
     data = wds.load_data(config.DATAFILE_LATEST)
     stations = wds.get_stations(data)
 
-    model_instance.initialize(stations)
-    return model_instance
+    hlp.initialize(stations)
+    return hlp
 
 
 @task
-def fit_model(model, data) -> TimeSeriesPredictor:
+def fit_model(model, data) -> HighLevelPredictor:
     model.fit(data)
     return model
 
 
 @task
-def train_model(train, model_order=8) -> TimeSeriesPredictor:
+def train_model(train, model_order=8) -> HighLevelPredictor:
     model = Predictor(order=model_order)
     mlflow.log_param("model_order", model_order)
     model.fit(train)
@@ -43,22 +45,22 @@ def train_model(train, model_order=8) -> TimeSeriesPredictor:
 
 
 @task
-def quantify_model(model: TimeSeriesPredictor, test, n_predict=10):
+def quantify_model(model: HighLevelPredictor, test, n_predict=10):
     mlflow.log_param("n_predict", n_predict)
     model.estimate_prediction_error(n_predict, test)
     return model
 
 
 @task
-def store_model(model: TimeSeriesPredictor, path="../artifacts/model.pickle"):
+def store_model(model: HighLevelPredictor, path="../artifacts/model.pickle"):
     with open_anywhere(path, "wb") as fd:
         model.serialize(fd)
 
 
 @task
-def load_model(path="../artifacts/model.pickle") -> TimeSeriesPredictor:
+def load_model(path="../artifacts/model.pickle") -> HighLevelPredictor:
     with open_anywhere(path, "rb") as fd:
-        return TimeSeriesPredictor.deserialize(fd)
+        return HighLevelPredictor.deserialize(fd)
 
 
 @task

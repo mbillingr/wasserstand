@@ -5,11 +5,12 @@ from wasserstand.models.time_series_predictor import TimeSeriesPredictor
 
 
 class UnivariatePredictor(TimeSeriesPredictor):
-    def __init__(self, order):
+    def __init__(self, order, learning_rate):
         super().__init__()
         self.order = order
         self.coef_ = None
         self.mean_ = None
+        self.learning_rate = learning_rate
         self.mean_boost = 100  # how much faster to learn the mean
 
     @property
@@ -23,26 +24,26 @@ class UnivariatePredictor(TimeSeriesPredictor):
         self.coef_ = da.concatenate([da.zeros((m, p)), self.coef_], axis=1)
         self.order = new_order
 
-    def initialize_raw(self, m: int):
+    def initialize(self, m: int):
         self.coef_ = da.zeros((m, self.order))
         # self.coef_[:, -1] = 1
         self.mean_ = da.zeros(m)
         return self
 
-    def fit_raw_incremental(self, raw_time_series, learning_rate):
+    def fit_incremental(self, raw_time_series):
         x, y = self._extract_xy(raw_time_series)
         m, n, p = x.shape
 
         # update mean independently of model coefficients seems to lead to a more stable fit
         gradient_mean = self.mean_ - raw_time_series.mean(axis=0)
-        mean = self.mean_ - gradient_mean * learning_rate * self.mean_boost
+        mean = self.mean_ - gradient_mean * self.learning_rate * self.mean_boost
 
         x_ = x - self.mean_[:, None, None]
         y_hat = x_ @ self.coef_[:, :, None] + mean[:, None, None]
         residuals = y_hat - y
 
         gradient_coef = 2 * (residuals.transpose(0, 2, 1) @ x)[:, 0, :] / n
-        coef = self.coef_ - gradient_coef * learning_rate
+        coef = self.coef_ - gradient_coef * self.learning_rate
 
         def err(m, c):
             y_hat = x_ @ c[:, :, None] + m[:, None, None]
@@ -54,7 +55,7 @@ class UnivariatePredictor(TimeSeriesPredictor):
         self.coef_ = coef.persist()
         return self
 
-    def fit_raw(self, raw_epochs):
+    def fit(self, raw_epochs):
         mean = raw_epochs.mean(axis=0).persist()
         xx, xy, x, y = self._compute_covariances(raw_epochs - mean)
 
@@ -84,7 +85,7 @@ class UnivariatePredictor(TimeSeriesPredictor):
         x = time_series[-self.order :] - self.mean_
         return (x * self.coef_.T).sum(axis=0, keepdims=True) + self.mean_
 
-    def evaluate_raw(self, raw_time_series):
+    def evaluate(self, raw_time_series):
         n, m = raw_time_series.shape
         x, y = self._extract_xy(raw_time_series - self.mean_)
         y = y.T[0]

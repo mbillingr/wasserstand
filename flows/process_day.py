@@ -65,9 +65,6 @@ def evaluate_model(predictor, time_series):
     station_mse = ((time_series - prediction) ** 2).mean("time")
     total_mse = station_mse.mean()
 
-    i = list(time_series.station).index("Innsbruck")
-    print("µ =", predictor.mean_[i].compute(), ", p =", predictor.coef_[i].compute())
-
     fig = Figure()
     ax = fig.add_subplot()
     ax.plot(time_series.time, time_series.sel(station="Innsbruck"))
@@ -115,10 +112,10 @@ def plot_forecast(model, prediction, actual=None):
 
 
 @task
-def learn(predictor, time_series, learning_rate=1e-6):
+def learn(predictor, time_series):
     predictor = deepcopy(predictor)
     for _ in range(10):
-        predictor.fit_incremental(time_series, learning_rate)
+        predictor.fit_incremental(time_series)
     # predictor.fit(time_series)
     # predictor.grow(8)
     return predictor
@@ -217,7 +214,9 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler="processes")) as flow:
         new_model_id = Parameter(
             "model-constructor", "wasserstand.models.univariate.UnivariatePredictor"
         )
-        new_model_config = Parameter("model-config", {"order": 2})
+        new_model_config = Parameter(
+            "model-config", {"order": 2, "learning_rate": 1e-6}
+        )
         new_model = model_tasks.new_model(new_model_id, kwargs=new_model_config)
         new_model = model_tasks.fit_model(new_model, time_series)
     model = merge(new_model, model)
