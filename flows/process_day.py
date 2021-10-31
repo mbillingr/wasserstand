@@ -171,7 +171,7 @@ def configure_continuation_flow(datestr):
 continuation_flow = StartFlowRun(flow_name=FLOW_NAME, project_name=PROJECT_NAME)
 
 
-#with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler="processes")) as flow:
+# with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler="processes")) as flow:
 with Flow(FLOW_NAME) as flow:
     start_date = Parameter("start-date", "2021-10-11")
     start_date = parse_date(start_date)
@@ -213,25 +213,28 @@ with Flow(FLOW_NAME) as flow:
 
     with case(model, None):
         new_model_id = Parameter(
-            #"model-constructor", "wasserstand.models.univariate.UnivariatePredictor"
-            "model-constructor", "wasserstand.models.mean.MeanPredictor"
+            "model-constructor",
+            "wasserstand.models.univariate.UnivariatePredictor"
+            # "model-constructor", "wasserstand.models.mean.MeanPredictor"
+            # "model-constructor", "wasserstand.models.uvar.UnivariateAR"
         )
         new_model_config = Parameter(
-            #"model-config", {"order": 2, "learning_rate": 1e-6}
-            "model-config", {"learning_rate": 1e-2}
+            "model-config",
+            {"order": 2, "mean_learning_rate": 1e-3, "ar_learning_rate": 1e-6}
+            # "model-config", {"learning_rate": 1e-2}
         )
         new_model = model_tasks.new_model(new_model_id, kwargs=new_model_config)
         new_model = model_tasks.fit_model(new_model, time_series)
-    model = merge(new_model, model)
+    old_model = merge(new_model, model)
 
-    performance = evaluate_model(model, time_series)
+    performance = evaluate_model(old_model, time_series)
     save_figure(performance, format_date(date, performance_path_template))
 
-    model = learn(model, time_series)
+    model = learn(old_model, time_series)
 
     old_prediction = load_forecast(format_date(date, forecast_path_template))
     with case(is_none(old_prediction), False):
-        prediction_plot = plot_forecast(model, old_prediction, time_series)
+        prediction_plot = plot_forecast(old_model, old_prediction, time_series)
         save_figure(prediction_plot, format_date(date, forecast_img_path_template))
         model2 = update_forecast_error(model, old_prediction, time_series)
     model = merge(model2, model)
@@ -251,5 +254,5 @@ with Flow(FLOW_NAME) as flow:
 
 
 if __name__ == "__main__":
-    #flow.visualize()
+    # flow.visualize()
     flow.run()

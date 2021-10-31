@@ -13,9 +13,7 @@ MIN_TIME = datetime.datetime(1, 1, 1)
 
 
 class HighLevelPredictor:
-    def __init__(
-        self, model: TimeSeriesPredictor, err=500 ** 2, err_learning_rate=1e-1
-    ):
+    def __init__(self, model: TimeSeriesPredictor, err=1 ** 2, err_learning_rate=1e-1):
         self.model = model
         self.err = err
         self.err_learning_rate = err_learning_rate

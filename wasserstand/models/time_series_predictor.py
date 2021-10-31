@@ -26,3 +26,6 @@ class TimeSeriesPredictor:
     @abstractmethod
     def predict_series(self, time_series):
         pass
+
+    def residuals(self, time_series):
+        return time_series - self.predict_series(time_series)

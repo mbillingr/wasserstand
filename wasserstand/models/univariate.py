@@ -1,91 +1,53 @@
 import dask.array as da
 from dask.array.lib.stride_tricks import sliding_window_view
 
+from wasserstand.models.mean import MeanPredictor
 from wasserstand.models.time_series_predictor import TimeSeriesPredictor
+from wasserstand.models.uvar import UnivariateAR
 
 
 class UnivariatePredictor(TimeSeriesPredictor):
-    def __init__(self, order, learning_rate):
+    def __init__(self, order, mean_learning_rate, ar_learning_rate):
         super().__init__()
-        self.order = order
-        self.coef_ = None
-        self.mean_ = None
-        self.learning_rate = learning_rate
-        self.mean_boost = 100  # how much faster to learn the mean
+        self.mean_model = MeanPredictor(learning_rate=mean_learning_rate)
+        self.ar_model = UnivariateAR(order=order, learning_rate=ar_learning_rate)
 
     @property
     def min_samples(self):
-        return self.order
+        return self.ar_model.order
 
     def grow(self, new_order):
-        assert new_order >= self.order
-        p = new_order - self.order
-        m = self.coef_.shape[0]
-        self.coef_ = da.concatenate([da.zeros((m, p)), self.coef_], axis=1)
-        self.order = new_order
+        self.ar_model = self.ar_model.grow(new_order)
+        return self
 
     def initialize(self, m: int):
-        self.coef_ = da.zeros((m, self.order))
-        # self.coef_[:, -1] = 1
-        self.mean_ = da.zeros(m)
+        self.mean_model = self.mean_model.initialize(m)
+        self.ar_model = self.ar_model.initialize(m)
         return self
 
-    def fit_incremental(self, raw_time_series):
-        x, y = self._extract_xy(raw_time_series)
-        m, n, p = x.shape
-
-        # update mean independently of model coefficients seems to lead to a more stable fit
-        gradient_mean = self.mean_ - raw_time_series.mean(axis=0)
-        mean = self.mean_ - gradient_mean * self.learning_rate * self.mean_boost
-
-        x_ = x - self.mean_[:, None, None]
-        y_hat = x_ @ self.coef_[:, :, None] + mean[:, None, None]
-        residuals = y_hat - y
-
-        gradient_coef = 2 * (residuals.transpose(0, 2, 1) @ x)[:, 0, :] / n
-        coef = self.coef_ - gradient_coef * self.learning_rate
-
-        def err(m, c):
-            y_hat = x_ @ c[:, :, None] + m[:, None, None]
-            return ((y_hat - y) ** 2).sum().compute()
-
-        print(err(self.mean_, self.coef_), " -> ", err(mean, coef))
-
-        self.mean_ = mean.persist()
-        self.coef_ = coef.persist()
+    def fit_incremental(self, time_series):
+        self.mean_model = self.mean_model.fit_incremental(time_series)
+        zero_mean_series = self.mean_model.residuals(time_series)
+        self.ar_model = self.ar_model.fit_incremental(zero_mean_series)
         return self
 
-    def fit(self, raw_epochs):
-        mean = raw_epochs.mean(axis=0).persist()
-        xx, xy, x, y = self._compute_covariances(raw_epochs - mean)
-
-        # regularize a little bit
-        xx += da.eye(xx.shape[-1])
-
-        coefs = da.stack([da.linalg.solve(xx, xy).ravel() for xx, xy in zip(xx, xy)])
-
-        self.coef_ = coefs.persist()
-        self.mean_ = mean.persist()
+    def fit(self, time_series):
+        self.mean_model = self.mean_model.fit(time_series)
+        zero_mean_series = self.mean_model.residuals(time_series)
+        self.ar_model = self.ar_model.fit(zero_mean_series)
         return self
-
-    def _compute_covariances(self, raw_time_series):
-        x, y = self._extract_xy(raw_time_series)
-        xx = x.transpose(0, 2, 1) @ x
-        xy = x.transpose(0, 2, 1) @ y
-        return xx, xy, x, y
-
-    def _extract_xy(self, raw_time_series):
-        n, m = raw_time_series.shape
-        window = sliding_window_view(raw_time_series, self.order + 1, axis=0)
-        x = window[..., :-1].reshape(-1, m, self.order).transpose(1, 0, 2)
-        y = window[..., -1].reshape(-1, m, 1).transpose(1, 0, 2)
-        return x, y
 
     def predict_next(self, time_series):
-        x = time_series[-self.order :] - self.mean_
-        return (x * self.coef_.T).sum(axis=0, keepdims=True) + self.mean_
+        x1 = time_series[-self.min_samples :]
+        y1 = self.mean_model.predict_next(x1)
+
+        x2 = self.mean_model.residuals(x1)
+        y2 = self.ar_model.predict_next(x2)
+
+        return y1 + y2
 
     def predict_series(self, time_series):
-        x, y = self._extract_xy(time_series - self.mean_)
-        y_hat = (x @ self.coef_[:, :, None]).T[0] + self.mean_
-        return y_hat
+        y1 = self.mean_model.predict_series(time_series)
+        y2 = self.ar_model.predict_series(time_series - y1)
+        n = min(y1.shape[0], y2.shape[0])
+        return y1[-n:] + y2[-n:]

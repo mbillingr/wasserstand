@@ -5,6 +5,7 @@ from wasserstand.models.time_series_predictor import TimeSeriesPredictor
 
 class MeanPredictor(TimeSeriesPredictor):
     def __init__(self, learning_rate):
+        super().__init__()
         self.mean_ = None
         self.learning_rate = learning_rate
 
