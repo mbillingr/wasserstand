@@ -149,7 +149,8 @@ def update_forecast_error(predictor, prediction, time_series):
 
 @task
 def save_figure(fig, path):
-    fig.savefig(path)
+    with open_anywhere(path, 'wb') as fd:
+        fig.savefig(fd)
 
 
 @task
@@ -231,7 +232,7 @@ def configure_continuation_flow(datestr):
 continuation_flow = StartFlowRun(flow_name=FLOW_NAME, project_name=PROJECT_NAME)
 
 
-with Flow(FLOW_NAME, executor=LocalDaskExecutor()) as flow:
+with Flow(FLOW_NAME, executor=LocalDaskExecutor(scheduler='processes')) as flow:
     start_date = Parameter("start-date", "2021-10-11")
     start_date = parse_date(start_date)
 
@@ -286,7 +287,7 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor()) as flow:
         model2 = update_forecast_error(model, old_prediction, time_series)
     model = merge(model2, model)
 
-    stored = model_tasks.store_model(model, format_date(date, model_path_template))
+    stored = model_tasks.store_model(model, format_date(date, model_path_template), upstream_tasks=[model])
 
     new_prediction = forecast(model, time_series)
     save_forecast(new_prediction, format_date(date + ONE_DAY, forecast_path_template))
@@ -294,9 +295,6 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor()) as flow:
     save_figure(
         prediction_plot, format_date(date + ONE_DAY, forecast_img_path_template)
     )
-
-    # with case(equals(date, end_date), False):
-    #    continuation_flow(parameters=configure_continuation_flow(format_date(date + ONE_DAY)))
 
 
 if __name__ == "__main__":

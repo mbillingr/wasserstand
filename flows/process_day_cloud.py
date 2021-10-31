@@ -149,7 +149,8 @@ def update_forecast_error(predictor, prediction, time_series):
 
 @task
 def save_figure(fig, path):
-    fig.savefig(path)
+    with open_anywhere(path, "wb") as fd:
+        fig.savefig(fd)
 
 
 @task
@@ -299,7 +300,8 @@ with Flow(FLOW_NAME, executor=LocalDaskExecutor()) as flow:
 
     with case(equals(date, end_date), False):
         continuation_flow(
-            parameters=configure_continuation_flow(format_date(date + ONE_DAY))
+            parameters=configure_continuation_flow(format_date(date + ONE_DAY)),
+            upstream_tasks=[stored],
         )
 
 
