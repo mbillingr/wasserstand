@@ -1,9 +1,6 @@
-import os
-
 from prefect import Flow, unmapped
-from prefect.run_configs import ECSRun
-from prefect.storage import GitHub
 
+from flows.cloudconfig import prepare_for_cloud
 from flows.tasks import dataset
 from flows.tasks import model
 from wasserstand.config import MODEL_ROOT
@@ -20,20 +17,7 @@ with Flow("training") as flow:
         unmapped(predictor), unmapped(test), station=[None, "Zirl", "Innsbruck"]
     )
 
-flow.storage = GitHub(
-    repo="mbillingr/wasserstand",
-    path="flows/training_cloud.py",
-)
-
-flow.run_config = ECSRun(
-    labels=["wasserstand"],
-    image="kazemakase/wasserstand:latest",
-    env={
-        "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
-        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
-        "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY"),
-    },
-)
+prepare_for_cloud(flow, flow_storage_path="flows/training_cloud.py")
 
 
 if __name__ == "__main__":
