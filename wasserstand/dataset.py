@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+import dask
 import dask.dataframe
 from dask import array as da
 import xarray as xr
@@ -11,6 +14,13 @@ def load_data(source):
     data = data.persist()  # big performance boost (and reduced network traffic)
     data = data.fillna(method="ffill")
     return data
+
+
+def load_data_range(start_date, end_date, template):
+    n_days = (end_date - start_date).days
+    dates = (start_date + timedelta(days=i) for i in range(n_days))
+    files = [date.strftime(template) for date in dates]
+    return load_data(files)
 
 
 def build_time_series(dataframe, stations=None):

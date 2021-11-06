@@ -30,5 +30,5 @@ class MeanPredictor(TimeSeriesPredictor):
     def predict_next(self, time_series):
         return self.mean_
 
-    def predict_series(self, time_series):
-        return da.zeros_like(time_series) + self.mean_
+    def predict_series(self, raw_time_series):
+        return da.zeros_like(raw_time_series) + self.mean_[None, :]

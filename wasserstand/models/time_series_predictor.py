@@ -28,4 +28,4 @@ class TimeSeriesPredictor:
         pass
 
     def residuals(self, time_series):
-        return time_series - self.predict_series(time_series)
+        return time_series[self.min_samples :] - self.predict_series(time_series)
